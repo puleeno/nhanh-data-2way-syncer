@@ -39,7 +39,7 @@ class Renderer
                 $this->page_mapping($data);
                 break;
             case 'nhanh-syncer-categories':
-                $this->page_categories($data);
+                $this->page_taxonomies($data);
                 break;
             case 'nhanh-syncer-logs':
                 $this->page_logs($data);
@@ -63,7 +63,7 @@ class Renderer
 
     private function render_header(array $meta, array $settings, string $page): void
     {
-        $title = esc_html($meta['title'] ?? 'NhanhSync Hub');
+        $title = esc_html($meta['title'] ?? 'Nhanh Data 2-Way Syncer');
         $group_label = esc_html($this->group_label($meta['group'] ?? 'dashboard'));
         $last = !empty($settings['last_heartbeat']) ? esc_html($settings['last_heartbeat']) : 'Chưa có';
         $connected = !empty($settings['is_connected']);
@@ -113,7 +113,7 @@ class Renderer
         $alerts = $mismatch + $unlinked;
 
         echo '<aside class="nhanh-syncer-sidebar">';
-        echo '<div class="nhanh-syncer-side-brand"><span class="dashicons dashicons-update-alt"></span><div><strong>NhanhSync Hub</strong><small>Nhanh.vn ↔ WordPress</small></div></div>';
+        echo '<div class="nhanh-syncer-side-brand"><span class="dashicons dashicons-update-alt"></span><div><strong>Nhanh Data 2-Way Syncer</strong><small>Nhanh.vn ↔ WooCommerce</small></div></div>';
 
         foreach ($groups as $gid => $gmeta) {
             $is_active_group = $gid === $current_group;
@@ -201,7 +201,7 @@ class Renderer
         $this->kv('Webhook sự kiện tức thì', !empty($settings['webhook_active']) ? 'Kích hoạt' : 'Tắt', !empty($settings['webhook_active']));
         $this->kv('Kết nối API', !empty($settings['is_connected']) ? 'OK · ' . (int)($settings['ping_latency_ms'] ?? 0) . 'ms' : 'Chưa kết nối', !empty($settings['is_connected']));
         $brandTax = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : ($settings['brand_taxonomy'] ?? 'product_brand');
-        $this->kv('Taxonomy danh mục/thương hiệu', 'product_cat / ' . $brandTax, true);
+        $this->kv('Taxonomy danh mục & thương hiệu', 'product_cat (Danh mục) / ' . $brandTax . ' (Thương hiệu)', true);
         echo '</div></section>';
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-randomize"></span> Sản phẩm cần đối soát</h3><a href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-mapping')) . '">Xem tất cả →</a></div><div class="nhanh-list">';
@@ -242,7 +242,7 @@ class Renderer
             $priceDiff = ($p['web_price'] !== null && (int)$p['web_price'] !== (int)$p['nhanh_price']);
             $stockDiff = ($p['web_stock'] !== null && (int)$p['web_stock'] !== (int)$p['nhanh_stock']);
             echo '<tr>';
-            echo '<td><strong>' . esc_html($p['nhanh_name']) . '</strong><div class="muted mono">' . esc_html($p['nhanh_code']) . '</div><div class="muted">' . esc_html($p['category']) . ' · <span class="mono">Brand:</span> ' . esc_html($p['brand'] ?? '—') . ' · ' . $this->velocity_badge($p['sell_velocity']) . '</div></td>';
+            echo '<td><strong>' . esc_html($p['nhanh_name']) . '</strong><div class="muted mono">' . esc_html($p['nhanh_code']) . '</div><div class="muted">' . esc_html($p['category']) . ' · <span class="mono">Thương hiệu:</span> ' . esc_html($p['brand'] ?? '—') . ' · ' . $this->velocity_badge($p['sell_velocity']) . '</div></td>';
             echo '<td>' . $this->status_badge($p['sync_status']) . '<div class="muted small">Cập nhật: ' . esc_html($p['last_synced']) . '</div></td>';
             if (!empty($p['web_id'])) {
                 echo '<td><strong>Đã liên kết: ' . esc_html($p['web_id']) . '</strong><div class="muted">SKU Web: ' . esc_html($p['nhanh_code']) . '</div></td>';
@@ -268,9 +268,9 @@ class Renderer
         echo '</tbody></table></div></section>';
     }
 
-    private function page_categories(array $data): void
+    private function page_taxonomies(array $data): void
     {
-        $terms = isset($data['term_maps']) ? $data['term_maps'] : ($data['categories'] ?? []);
+        $terms = isset($data['term_maps']) ? $data['term_maps'] : [];
         $type = isset($_GET['term_type']) ? sanitize_key(wp_unslash($_GET['term_type'])) : 'all';
         $filtered = array_filter($terms, function ($t) use ($type) {
             if ($type === 'all') return true;
@@ -283,21 +283,21 @@ class Renderer
             if (($t['type'] ?? '') === 'brand') $brandCount++; else $catCount++;
         }
         echo '<div class="nhanh-grid kpis">';
-        $this->kpi('Tổng term Nhanh.vn', (string)$total, $catCount . ' danh mục · ' . $brandCount . ' thương hiệu', 'dashicons-networking');
-        $this->kpi('Đã liên kết WC', (string)$mapped, 'Khớp product_cat / product_brand', 'dashicons-yes-alt', 'ok');
-        $this->kpi('Chưa ánh xạ', (string)$unmapped, 'Cần map vào taxonomy WooCommerce', 'dashicons-warning', $unmapped ? 'warn' : 'ok');
+        $this->kpi('Tổng danh mục & thương hiệu Nhanh.vn', (string)$total, $catCount . ' danh mục sản phẩm · ' . $brandCount . ' thương hiệu', 'dashicons-networking');
+        $this->kpi('Đã liên kết WooCommerce', (string)$mapped, 'Khớp taxonomy product_cat / product_brand', 'dashicons-yes-alt', 'ok');
+        $this->kpi('Chưa ánh xạ', (string)$unmapped, 'Cần ánh xạ vào taxonomy WooCommerce', 'dashicons-warning', $unmapped ? 'warn' : 'ok');
         $brandTax = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : 'product_brand';
-        $this->kpi('Taxonomy tham chiếu', '2 loại', 'product_cat (categories) · ' . $brandTax . ' (brands)', 'dashicons-tag', 'accent');
+        $this->kpi('Taxonomy WooCommerce', '2 loại', 'product_cat (Danh mục) · ' . $brandTax . ' (Thương hiệu)', 'dashicons-tag', 'accent');
         echo '</div>';
 
-        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-networking"></span> Đồng Bộ Danh Mục & Thương Hiệu (Nhanh.vn ↔ WooCommerce)</h3><a class="button button-primary" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-categories')) . '">Đồng bộ toàn bộ</a></div>';
+        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-networking"></span> Đồng Bộ Danh Mục & Thương Hiệu Sản Phẩm (Nhanh.vn ↔ WooCommerce)</h3><a class="button button-primary" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-categories')) . '">Đồng bộ toàn bộ</a></div>';
         echo '<form method="get" class="nhanh-filters"><input type="hidden" name="page" value="nhanh-syncer-categories" />';
-        echo '<select name="term_type"><option value="all"' . selected($type,'all',false) . '>Tất cả (Danh mục & Thương hiệu)</option><option value="category"' . selected($type,'category',false) . '>Danh mục (product_cat)</option><option value="brand"' . selected($type,'brand',false) . '>Thương hiệu (' . esc_attr($brandTax) . ')</option></select> ';
+        echo '<select name="term_type"><option value="all"' . selected($type,'all',false) . '>Tất cả (Danh mục & Thương hiệu)</option><option value="category"' . selected($type,'category',false) . '>Danh mục sản phẩm (product_cat)</option><option value="brand"' . selected($type,'brand',false) . '>Thương hiệu (taxonomy: ' . esc_attr($brandTax) . ')</option></select> ';
         echo '<button class="button">Lọc</button></form>';
-        echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Loại</th><th>Term trên Nhanh.vn</th><th>WC Taxonomy</th><th>Số SP</th><th>Term WooCommerce tương ứng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>';
+        echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Loại</th><th>Tên trên Nhanh.vn</th><th>Taxonomy WooCommerce</th><th>Số SP</th><th>Term WooCommerce tương ứng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>';
         foreach ($filtered as $t) {
             $isBrand = ($t['type'] ?? '') === 'brand';
-            $typeLabel = $isBrand ? 'Thương hiệu' : 'Danh mục';
+            $typeLabel = $isBrand ? 'Thương hiệu' : 'Danh mục sản phẩm';
             $typePill = $isBrand ? 'neutral' : 'ok';
             echo '<tr>';
             echo '<td><span class="pill ' . $typePill . '">' . esc_html($typeLabel) . '</span></td>';
@@ -310,7 +310,7 @@ class Renderer
             echo '</tr>';
         }
         if (empty($filtered)) {
-            echo '<tr><td colspan="7" class="muted">Không có term phù hợp.</td></tr>';
+            echo '<tr><td colspan="7" class="muted">Không có danh mục hoặc thương hiệu phù hợp.</td></tr>';
         }
         echo '</tbody></table></div></section>';
     }
@@ -392,7 +392,7 @@ class Renderer
     {
         $saved = isset($_GET['nhanh_saved']);
         $test = isset($_GET['nhanh_test']) ? sanitize_key(wp_unslash($_GET['nhanh_test'])) : '';
-        if ($saved) echo '<div class="notice notice-success is-dismissible"><p>Đã lưu cấu hình NhanhSync Hub.</p></div>';
+        if ($saved) echo '<div class="notice notice-success is-dismissible"><p>Đã lưu cấu hình Nhanh Data 2-Way Syncer.</p></div>';
         if ($test === 'ok') echo '<div class="notice notice-success is-dismissible"><p>Kết nối API Nhanh.vn thành công (mô phỏng kiểm tra cấu hình).</p></div>';
         if ($test === 'fail') echo '<div class="notice notice-error is-dismissible"><p>Chưa thể kết nối: vui lòng kiểm tra App ID và Access Token.</p></div>';
 
@@ -414,7 +414,7 @@ class Renderer
         $this->field_text('sync_interval_minutes', 'Chu kỳ đồng bộ (phút)', (string)($settings['sync_interval_minutes'] ?? 15), 'number');
         $this->field_text('safety_stock_buffer', 'Safety stock buffer', (string)($settings['safety_stock_buffer'] ?? 2), 'number');
         $brandTaxDefault = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : 'product_brand';
-        $this->field_text('brand_taxonomy', 'WooCommerce brand taxonomy', $settings['brand_taxonomy'] ?? $brandTaxDefault, 'text', true, 'full');
+        $this->field_text('brand_taxonomy', 'Taxonomy thương hiệu WooCommerce (mặc định: product_brand)', $settings['brand_taxonomy'] ?? $brandTaxDefault, 'text', true, 'full');
         echo '</div><div class="nhanh-checks">';
         $this->field_check('webhook_active', 'Kích hoạt webhook thời gian thực', !empty($settings['webhook_active']));
         $this->field_check('auto_sync_enabled', 'Bật đồng bộ tự động theo chu kỳ', !empty($settings['auto_sync_enabled']));
@@ -428,8 +428,8 @@ class Renderer
         $rows = [
             ['nhanh_sync_product_map', 'Ánh xạ & snapshot sản phẩm Nhanh ↔ WC, trạng thái đối soát, metrics', 'wc_product_id/wc_variation_id → product/product_variation, _sku/_price/_stock (lookup/meta)'],
             ['nhanh_sync_product_warehouses', 'Tồn kho theo từng kho Nhanh (đa kho)', 'Gộp theo rule + buffer → tồn WC'],
-            ['nhanh_sync_term_map', 'Ánh xạ term Nhanh ↔ WC cho Danh mục & Thương hiệu', 'wc_taxonomy=product_cat, wc_term_id → terms/term_taxonomy (categories); wc_taxonomy=product_brand, wc_term_id → terms/term_taxonomy (brands)'],
-            ['nhanh_sync_product_terms', 'Quan hệ N-N sản phẩm ↔ term map (nhiều category/brand)', 'wp_set_object_terms(..., product_cat/product_brand)'],
+            ['nhanh_sync_term_map', 'Ánh xạ danh mục & thương hiệu Nhanh ↔ WooCommerce', 'wc_taxonomy=product_cat + wc_term_id → terms/term_taxonomy (Danh mục); wc_taxonomy=product_brand + wc_term_id → terms/term_taxonomy (Thương hiệu)'],
+            ['nhanh_sync_product_terms', 'Quan hệ N-N sản phẩm ↔ danh mục/thương hiệu', 'Gán term qua wp_set_object_terms(..., product_cat) và wp_set_object_terms(..., product_brand)'],
             ['nhanh_sync_logs', 'Nhật ký sync/audit, payload/response, idempotency (dedupe_key)', 'Liên kết product_map_id, wc_order_id'],
             ['nhanh_sync_order_map', 'Ánh xạ đơn Nhanh ↔ WooCommerce', 'wc_order_id → wc_orders (HPOS) / shop_order (legacy)'],
             ['nhanh_sync_jobs', 'Theo dõi batch/cron/manual jobs', '—'],

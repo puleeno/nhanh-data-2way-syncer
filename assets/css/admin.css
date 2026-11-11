@@ -1,4 +1,4 @@
-/* Nhanh Data 2-Way Syncer - WP Admin UI inspired by NhanhSync Hub */
+/* Nhanh Data 2-Way Syncer - WP Admin UI (Nhanh.vn ↔ WooCommerce) */
 .nhanh-syncer-wrap { margin: 16px 0 24px; }
 .nhanh-syncer-header { display:flex; align-items:center; justify-content:space-between; gap:16px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; margin-bottom:16px; }
 .nhanh-syncer-breadcrumb { font-size:13px; color:#64748b; min-width:0; }

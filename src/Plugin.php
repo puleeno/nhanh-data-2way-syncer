@@ -137,7 +137,7 @@ class Plugin
             return;
         }
         echo '<div class="notice notice-warning"><p>';
-        echo esc_html__('Nhanh Data 2-Way Syncer yêu cầu WooCommerce đang hoạt động để đồng bộ sản phẩm, danh mục, thương hiệu và đơn hàng.', 'nhanh-data-2way-syncer');
+        echo esc_html__('Nhanh Data 2-Way Syncer yêu cầu WooCommerce đang hoạt động để đồng bộ sản phẩm, danh mục sản phẩm, thương hiệu và đơn hàng.', 'nhanh-data-2way-syncer');
         echo '</p></div>';
     }
 

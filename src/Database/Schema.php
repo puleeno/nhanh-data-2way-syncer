@@ -79,7 +79,7 @@ class Schema
             KEY idx_warehouse (warehouse_id)
         ) $charset_collate;";
 
-        // 3. Taxonomy/term mapping for categories and brands (product_cat, product_brand)
+        // 3. Taxonomy mapping for product categories and brands (product_cat, product_brand)
         $tables[] = "CREATE TABLE {$p}nhanh_sync_term_map (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             nhanh_term_type varchar(20) NOT NULL,
@@ -102,7 +102,7 @@ class Schema
             KEY idx_nhanh_type_parent (nhanh_term_type, nhanh_parent_id)
         ) $charset_collate;";
 
-        // 4. Product <-> term relations (N-N, supports multiple categories/brands)
+        // 4. Product <-> taxonomy term relations (N-N, multiple categories/brands per product)
         $tables[] = "CREATE TABLE {$p}nhanh_sync_product_terms (
             product_map_id bigint(20) unsigned NOT NULL,
             term_map_id bigint(20) unsigned NOT NULL,

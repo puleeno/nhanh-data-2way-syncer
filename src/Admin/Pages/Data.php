@@ -17,7 +17,7 @@ class Data
             self::p('NHANH-NEW-001', 'Sản phẩm mới tạo trên Nhanh.vn (chưa map)', 'Phụ Kiện & Balo', 'NoBrand', 199000, 30, null, null, null, 'unlinked', 'steady', 30, 0, 0),
         ];
 
-        // Taxonomy term mappings: product_cat (categories) and product_brand (brands)
+        // Ánh xạ taxonomy: product_cat (danh mục sản phẩm) và product_brand (thương hiệu)
         $term_maps = [
             ['type' => 'category', 'nhanh_id' => 'NCAT-101', 'nhanh' => 'Thời Trang Nam', 'wc_taxonomy' => 'product_cat', 'web' => 'Thời Trang Nam', 'wc_term_id' => 301, 'count' => 128, 'status' => 'synced', 'time' => 'Hôm nay'],
             ['type' => 'category', 'nhanh_id' => 'NCAT-102', 'nhanh' => 'Thời Trang Nữ', 'wc_taxonomy' => 'product_cat', 'web' => 'Thời Trang Nữ', 'wc_term_id' => 302, 'count' => 96, 'status' => 'synced', 'time' => 'Hôm nay'],
@@ -37,8 +37,8 @@ class Data
             ['time' => '17:58:41', 'type' => 'webhook_order', 'ref' => 'ORD-NH-93210', 'title' => 'Đơn hàng mới tại Nhanh.vn', 'detail' => 'Tự động hạ tồn kho website cho POLO-PIMA-01-DEN-L: 47 -> 46.', 'status' => 'success', 'ms' => 48],
             ['time' => '17:45:00', 'type' => 'price_update', 'ref' => 'POLO-PIMA-01-TRANG-M', 'title' => 'Phát hiện lệch giá bán', 'detail' => 'Nhanh 350.000₫, Website 380.000₫. Chờ đồng bộ theo quy tắc.', 'status' => 'warning', 'ms' => 65],
             ['time' => '17:30:12', 'type' => 'stock_update', 'ref' => 'JEAN-SLIM-COGIAN-XANH-31', 'title' => 'Phát hiện lệch tồn kho', 'detail' => 'Nhanh 18, Website 25. Xuất kho tại cửa hàng chưa phản ánh.', 'status' => 'warning', 'ms' => 72],
-            ['time' => '17:12:03', 'type' => 'category_sync', 'ref' => 'CAT-305', 'title' => 'Đồng bộ danh mục Mỹ Phẩm & Chăm Sóc', 'detail' => 'Ánh xạ sang term product_cat "Làm Đẹp & Chăm Sóc Da".', 'status' => 'success', 'ms' => 120],
-            ['time' => '17:05:10', 'type' => 'category_sync', 'ref' => 'NBR-204', 'title' => 'Thương hiệu TechPack chưa ánh xạ', 'detail' => 'Nhanh brand "TechPack" chưa có term tương ứng trong taxonomy product_brand trên WooCommerce.', 'status' => 'warning', 'ms' => 88],
+            ['time' => '17:12:03', 'type' => 'category_sync', 'ref' => 'CAT-305', 'title' => 'Đồng bộ danh mục sản phẩm Mỹ Phẩm & Chăm Sóc', 'detail' => 'Ánh xạ sang term taxonomy product_cat "Làm Đẹp & Chăm Sóc Da".', 'status' => 'success', 'ms' => 120],
+            ['time' => '17:05:10', 'type' => 'category_sync', 'ref' => 'NBR-204', 'title' => 'Thương hiệu TechPack chưa ánh xạ', 'detail' => 'Thương hiệu "TechPack" trên Nhanh.vn chưa có term tương ứng trong taxonomy product_brand trên WooCommerce.', 'status' => 'warning', 'ms' => 88],
         ];
 
         $revenue = [

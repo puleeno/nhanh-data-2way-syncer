@@ -24,8 +24,8 @@ class Menu
     public function register_menu(): void
     {
         add_menu_page(
-            __('NhanhSync Hub', 'nhanh-data-2way-syncer'),
-            __('NhanhSync Hub', 'nhanh-data-2way-syncer'),
+            __('Nhanh Data 2-Way Syncer', 'nhanh-data-2way-syncer'),
+            __('Nhanh Data 2-Way Syncer', 'nhanh-data-2way-syncer'),
             'manage_options',
             self::SLUG,
             [$this, 'render_page'],
@@ -63,7 +63,7 @@ class Menu
                 'group' => 'catalog',
             ],
             'nhanh-syncer-categories' => [
-                'title' => __('Đồng Bộ Danh Mục & Thương Hiệu (product_cat / product_brand)', 'nhanh-data-2way-syncer'),
+                'title' => __('Đồng Bộ Danh Mục & Thương Hiệu Sản Phẩm', 'nhanh-data-2way-syncer'),
                 'menu_title' => __('Danh mục & Thương hiệu', 'nhanh-data-2way-syncer'),
                 'group' => 'catalog',
             ],

@@ -61,7 +61,7 @@ class Formatter
             'stock_update' => 'Tồn kho',
             'price_update' => 'Giá bán',
             'product_sync' => 'Sản phẩm',
-            'category_sync' => 'Danh mục/Thương hiệu',
+            'category_sync' => 'Danh mục & Thương hiệu',
             'webhook_order' => 'Đơn hàng',
             'manual_batch' => 'Quét Batch',
         ];
