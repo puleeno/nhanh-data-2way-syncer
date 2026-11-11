@@ -1,0 +1,112 @@
+/* Nhanh Data 2-Way Syncer - WP Admin UI inspired by NhanhSync Hub */
+.nhanh-syncer-wrap { margin: 16px 0 24px; }
+.nhanh-syncer-header { display:flex; align-items:center; justify-content:space-between; gap:16px; background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; margin-bottom:16px; }
+.nhanh-syncer-breadcrumb { font-size:13px; color:#64748b; min-width:0; }
+.nhanh-syncer-breadcrumb .sep { margin:0 6px; color:#cbd5e1; }
+.nhanh-syncer-breadcrumb strong { color:#0f172a; font-size:14px; }
+.nhanh-syncer-header-meta { display:flex; gap:6px; align-items:center; color:#64748b; font-size:12px; flex-wrap:wrap; justify-content:center; }
+.nhanh-syncer-header-meta .dot { color:#cbd5e1; }
+.nhanh-syncer-header-actions { display:flex; gap:8px; }
+
+.nhanh-syncer-shell { display:grid; grid-template-columns: 260px 1fr; gap:16px; align-items:start; }
+.nhanh-syncer-sidebar { background:#0f172a; color:#cbd5e1; border-radius:14px; padding:12px; position:sticky; top:46px; }
+.nhanh-syncer-side-brand { display:flex; gap:10px; align-items:center; padding:8px 8px 12px; border-bottom:1px solid #1e293b; margin-bottom:10px; }
+.nhanh-syncer-side-brand .dashicons { font-size:22px; width:22px; height:22px; color:#34d399; background:#064e3b; border-radius:8px; padding:6px; }
+.nhanh-syncer-side-brand strong { display:block; color:#fff; font-size:13px; }
+.nhanh-syncer-side-brand small { display:block; color:#94a3b8; font-size:11px; }
+.nhanh-syncer-group { margin:10px 0; }
+.nhanh-syncer-group-title { display:flex; align-items:center; gap:8px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; padding:6px 8px; font-weight:600; }
+.nhanh-syncer-group.is-active .nhanh-syncer-group-title { color:#a7f3d0; }
+.nhanh-syncer-group-title .dashicons { font-size:15px; width:15px; height:15px; }
+.nhanh-syncer-group-items { list-style:none; margin:0; padding:0 0 4px 0; }
+.nhanh-syncer-group-items li a { display:block; padding:7px 10px 7px 31px; border-radius:8px; color:#cbd5e1; text-decoration:none; font-size:12px; }
+.nhanh-syncer-group-items li a:hover { background:#1e293b; color:#fff; }
+.nhanh-syncer-group-items li.is-current a { background:rgba(16,185,129,.15); color:#d1fae5; border:1px solid rgba(16,185,129,.35); font-weight:600; }
+.nhanh-badge-warn, .nhanh-badge-inline { background:#f59e0b; color:#111827; border-radius:999px; font-size:10px; padding:1px 6px; font-weight:700; margin-left:auto; }
+.nhanh-badge-inline { margin-left:6px; }
+.nhanh-syncer-side-status { margin-top:12px; padding:10px; border:1px solid #1e293b; border-radius:10px; background:#020617; }
+.nhanh-syncer-side-status .label { font-size:11px; color:#94a3b8; }
+.nhanh-syncer-side-status .value { font-weight:700; margin:2px 0; }
+.nhanh-syncer-side-status .value.ok { color:#34d399; }
+.nhanh-syncer-side-status .value.bad { color:#fb7185; }
+.nhanh-syncer-side-status .meta { font-size:11px; color:#94a3b8; }
+
+.nhanh-syncer-main { min-width:0; }
+.nhanh-grid { display:grid; gap:14px; margin-bottom:14px; }
+.nhanh-grid.kpis { grid-template-columns: repeat(4, minmax(0,1fr)); }
+.nhanh-grid.kpis.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
+.nhanh-grid.two { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.nhanh-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:14px 16px; box-shadow:0 1px 0 rgba(15,23,42,.02); }
+.nhanh-card.kpi .kpi-top { display:flex; justify-content:space-between; color:#64748b; font-size:12px; }
+.nhanh-card.kpi .kpi-top .dashicons { color:#059669; }
+.nhanh-card.kpi .kpi-value { font-size:24px; font-weight:700; color:#0f172a; margin:6px 0 2px; font-variant-numeric:tabular-nums; }
+.nhanh-card.kpi .kpi-sub { font-size:12px; color:#64748b; }
+.nhanh-card.kpi.warn .kpi-value { color:#d97706; }
+.nhanh-card.kpi.ok .kpi-value { color:#059669; }
+.nhanh-card.kpi.accent .kpi-value { color:#059669; }
+.nhanh-card-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #f1f5f9; }
+.nhanh-card-head h3 { margin:0; font-size:14px; color:#0f172a; display:flex; align-items:center; gap:6px; }
+.nhanh-card-head h3 .dashicons { color:#059669; }
+.nhanh-card-head .muted { font-size:12px; color:#64748b; }
+.muted { color:#64748b; }
+.muted.small { font-size:11px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.diff { color:#d97706; }
+
+.nhanh-notice { display:flex; gap:12px; align-items:flex-start; border:1px solid #fde68a; background:#fffbeb; color:#92400e; border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+.nhanh-notice .dashicons { color:#d97706; margin-top:2px; }
+.nhanh-notice p { margin:2px 0 0; color:#a16207; }
+.nhanh-notice .button { margin-left:auto; white-space:nowrap; }
+
+.nhanh-bars { display:flex; gap:10px; align-items:flex-end; min-height:210px; padding:8px 4px 0; }
+.nhanh-bar-col { flex:1; text-align:center; }
+.nhanh-bar { width:100%; max-width:42px; margin:0 auto; border-radius:8px 8px 4px 4px; overflow:hidden; display:flex; flex-direction:column-reverse; background:#e2e8f0; }
+.nhanh-bar .web { background:#10b981; display:block; }
+.nhanh-bar .nhanh { background:#38bdf8; display:block; }
+.nhanh-bar-col .lbl { font-size:11px; color:#64748b; margin-top:6px; font-weight:600; }
+.nhanh-bar-col .val { font-size:10px; color:#94a3b8; }
+.nhanh-legend { display:flex; gap:14px; font-size:12px; color:#64748b; margin-top:8px; }
+.nhanh-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+.nhanh-legend i.web { background:#10b981; }
+.nhanh-legend i.nhanh { background:#38bdf8; }
+
+.nhanh-table-wrap { overflow:auto; }
+.nhanh-table th { font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:#64748b; }
+.nhanh-table td { vertical-align:top; font-size:13px; }
+.nhanh-table .nhanh-actions { white-space:nowrap; }
+.pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; line-height:1.6; border:1px solid transparent; }
+.pill.ok { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+.pill.warn { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+.pill.bad { background:#fff1f2; color:#be123c; border-color:#fecdd3; }
+.pill.neutral { background:#f1f5f9; color:#334155; border-color:#e2e8f0; }
+
+.nhanh-list-item { display:flex; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid #f1f5f9; }
+.nhanh-list-item:last-child { border-bottom:0; }
+.nhanh-kv { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.nhanh-kv .kv { background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:4px; font-size:12px; }
+.nhanh-kv .kv span { color:#64748b; }
+.nhanh-kv .kv strong.ok { color:#059669; }
+.nhanh-kv .kv strong.bad { color:#e11d48; }
+.nhanh-filters { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.nhanh-filters input[type=search], .nhanh-filters select { max-width:100%; }
+
+.nhanh-settings-form .nhanh-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.nhanh-field { display:flex; flex-direction:column; gap:4px; }
+.nhanh-field.full { grid-column:1 / -1; }
+.nhanh-field label { font-weight:600; font-size:12px; color:#334155; }
+.nhanh-field input { width:100%; padding:6px 8px; }
+.nhanh-checks { margin-top:12px; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.nhanh-check { display:flex; gap:8px; align-items:center; font-size:13px; color:#334155; }
+.nhanh-form-actions { margin-top:14px; }
+
+@media (max-width: 1200px) {
+  .nhanh-grid.kpis { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .nhanh-grid.two { grid-template-columns: 1fr; }
+  .nhanh-syncer-shell { grid-template-columns: 220px 1fr; }
+}
+@media (max-width: 782px) {
+  .nhanh-syncer-shell { grid-template-columns: 1fr; }
+  .nhanh-syncer-header { flex-direction:column; align-items:flex-start; }
+  .nhanh-grid.kpis, .nhanh-grid.kpis.three { grid-template-columns: 1fr; }
+  .nhanh-settings-form .nhanh-form-grid, .nhanh-checks, .nhanh-kv { grid-template-columns: 1fr; }
+}

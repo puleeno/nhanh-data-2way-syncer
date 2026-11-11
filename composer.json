@@ -1,0 +1,17 @@
+{
+    "name": "puleeno/nhanh-data-2way-syncer",
+    "autoload": {
+        "psr-4": {
+            "Puleeno\\NhanhVn\\Syncer\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Puleeno Nguyen",
+            "email": "puleeno@gmail.com"
+        }
+    ],
+    "require": {
+        "puleeno/nhanh-vn-sdk": "^0.4.3"
+    }
+}
