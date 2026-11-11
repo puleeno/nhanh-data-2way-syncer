@@ -74,6 +74,17 @@ class SettingsService
             return !empty($input[$key]) ? 1 : 0;
         };
 
+        $ui_mode = isset($input['ui_mode']) ? sanitize_key((string) $input['ui_mode']) : 'compact';
+        if (!in_array($ui_mode, ['compact', 'advanced'], true)) {
+            $ui_mode = 'compact';
+        }
+        $clamp = function ($key, $default, $min, $max) use ($input) {
+            $v = isset($input[$key]) ? intval($input[$key]) : $default;
+            if ($v < $min) $v = $min;
+            if ($v > $max) $v = $max;
+            return $v;
+        };
+
         return [
             'app_id' => $text('app_id'),
             'secret_key' => $text('secret_key'),
@@ -90,6 +101,13 @@ class SettingsService
             'auto_stock_update' => $bool('auto_stock_update'),
             'auto_create_missing_web_product' => $bool('auto_create_missing_web_product'),
             'brand_taxonomy' => $brand_tax,
+            'ui_mode' => $ui_mode,
+            'products_per_page_compact' => $clamp('products_per_page_compact', 20, 5, 100),
+            'products_per_page_advanced' => $clamp('products_per_page_advanced', 100, 20, 500),
+            'terms_per_page_compact' => $clamp('terms_per_page_compact', 20, 5, 100),
+            'terms_per_page_advanced' => $clamp('terms_per_page_advanced', 100, 20, 500),
+            'logs_per_page_compact' => $clamp('logs_per_page_compact', 20, 5, 100),
+            'logs_per_page_advanced' => $clamp('logs_per_page_advanced', 100, 20, 500),
         ];
     }
 
