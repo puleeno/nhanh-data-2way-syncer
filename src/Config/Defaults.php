@@ -27,12 +27,14 @@ class Defaults
             'auto_stock_update' => 1,
             'auto_create_missing_web_product' => 0,
             'brand_taxonomy' => 'product_brand',
-            // UI/performance modes for catalogs with many products/variations.
+            // UI/performance modes for catalogs with many products/variations/orders.
             'ui_mode' => 'compact', // compact|advanced
             'products_per_page_compact' => 20,
             'products_per_page_advanced' => 100,
             'terms_per_page_compact' => 20,
             'terms_per_page_advanced' => 100,
+            'orders_per_page_compact' => 20,
+            'orders_per_page_advanced' => 100,
             'logs_per_page_compact' => 20,
             'logs_per_page_advanced' => 100,
             'is_connected' => 0,

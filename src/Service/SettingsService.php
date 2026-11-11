@@ -106,6 +106,8 @@ class SettingsService
             'products_per_page_advanced' => $clamp('products_per_page_advanced', 100, 20, 500),
             'terms_per_page_compact' => $clamp('terms_per_page_compact', 20, 5, 100),
             'terms_per_page_advanced' => $clamp('terms_per_page_advanced', 100, 20, 500),
+            'orders_per_page_compact' => $clamp('orders_per_page_compact', 20, 5, 100),
+            'orders_per_page_advanced' => $clamp('orders_per_page_advanced', 100, 20, 500),
             'logs_per_page_compact' => $clamp('logs_per_page_compact', 20, 5, 100),
             'logs_per_page_advanced' => $clamp('logs_per_page_advanced', 100, 20, 500),
         ];

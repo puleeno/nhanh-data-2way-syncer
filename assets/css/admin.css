@@ -136,3 +136,16 @@
   .nhanh-mode-bar,.nhanh-pagination{flex-direction:column;align-items:flex-start;}
   .nhanh-filters-advanced select,.nhanh-filters-advanced input[type=search]{max-width:100%;width:100%;}
 }
+
+/* Collapsible plugin sidebar (for large data tables) */
+.nhanh-syncer-header-actions .nhanh-sidebar-toggle{display:inline-flex;align-items:center;gap:4px;}
+.nhanh-syncer-header-actions .nhanh-sidebar-toggle .dashicons{font-size:16px;width:16px;height:16px;line-height:16px;margin-top:2px;}
+.nhanh-syncer-shell{min-width:0;}
+.nhanh-syncer-main{min-width:0;overflow-x:auto;}
+.nhanh-syncer-wrap.is-sidebar-collapsed .nhanh-syncer-shell{grid-template-columns: 0 1fr;gap:0;}
+.nhanh-syncer-wrap.is-sidebar-collapsed .nhanh-syncer-sidebar{display:none;}
+.nhanh-syncer-wrap.is-sidebar-collapsed .nhanh-syncer-main{width:100%;}
+.nhanh-table-wrap{max-width:100%;overflow-x:auto;}
+@media (max-width: 782px){
+  .nhanh-syncer-header-actions .nhanh-sidebar-toggle{width:100%;justify-content:center;}
+}

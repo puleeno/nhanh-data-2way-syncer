@@ -32,9 +32,20 @@ class Data
             ['type' => 'brand', 'nhanh_id' => 'NBR-206', 'nhanh' => 'CocoCare', 'wc_taxonomy' => 'product_brand', 'web' => 'CocoCare', 'wc_term_id' => 406, 'count' => 21, 'status' => 'synced', 'time' => 'Hôm nay'],
         ];
 
+        // Ánh xạ đơn hàng: Nhanh.vn ↔ WooCommerce (HPOS-safe qua wc_order_id)
+        $order_maps = [
+            ['wc_order_id' => 10421, 'nhanh_order_id' => '90412', 'nhanh_order_code' => 'ORD-NH-90412', 'sync_status' => 'synced', 'total_amount' => 1140000, 'source' => 'wc_to_nhanh', 'last_synced_at' => '17:45:10 hôm nay'],
+            ['wc_order_id' => 10418, 'nhanh_order_id' => '93210', 'nhanh_order_code' => 'ORD-NH-93210', 'sync_status' => 'synced', 'total_amount' => 380000, 'source' => 'nhanh_to_wc', 'last_synced_at' => '17:58:41 hôm nay'],
+            ['wc_order_id' => 10415, 'nhanh_order_id' => '93188', 'nhanh_order_code' => 'ORD-NH-93188', 'sync_status' => 'synced', 'total_amount' => 790000, 'source' => 'nhanh_to_wc', 'last_synced_at' => '17:20:05 hôm nay'],
+            ['wc_order_id' => 10410, 'nhanh_order_id' => '93142', 'nhanh_order_code' => 'ORD-NH-93142', 'sync_status' => 'synced', 'total_amount' => 650000, 'source' => 'wc_to_nhanh', 'last_synced_at' => '16:52:30 hôm nay'],
+            ['wc_order_id' => 10405, 'nhanh_order_id' => '93101', 'nhanh_order_code' => 'ORD-NH-93101', 'sync_status' => 'pending', 'total_amount' => 520000, 'source' => 'wc_to_nhanh', 'last_synced_at' => '—'],
+            ['wc_order_id' => 10398, 'nhanh_order_id' => '93055', 'nhanh_order_code' => 'ORD-NH-93055', 'sync_status' => 'failed', 'total_amount' => 280000, 'source' => 'nhanh_to_wc', 'last_synced_at' => '15:10:12 hôm nay'],
+        ];
+
         $logs = [
             ['time' => '18:02:15', 'type' => 'manual_batch', 'ref' => 'BATCH-1024', 'title' => 'Đồng bộ toàn diện thành công', 'detail' => 'Đã quét và đồng bộ giá bán & tồn kho. Toàn bộ chênh lệch đã được cập nhật.', 'status' => 'success', 'ms' => 820],
-            ['time' => '17:58:41', 'type' => 'webhook_order', 'ref' => 'ORD-NH-93210', 'title' => 'Đơn hàng mới tại Nhanh.vn', 'detail' => 'Tự động hạ tồn kho website cho POLO-PIMA-01-DEN-L: 47 -> 46.', 'status' => 'success', 'ms' => 48],
+            ['time' => '17:58:41', 'type' => 'webhook_order', 'ref' => 'ORD-NH-93210', 'title' => 'Đơn hàng mới tại Nhanh.vn', 'detail' => 'Tự động hạ tồn kho website cho POLO-PIMA-01-DEN-L: 47 -> 46. Đã map WC #10418 ↔ ORD-NH-93210.', 'status' => 'success', 'ms' => 48],
+            ['time' => '17:45:10', 'type' => 'webhook_order', 'ref' => 'ORD-NH-90412', 'title' => 'Đồng bộ đơn hàng từ Website về Nhanh.vn', 'detail' => 'Đơn hàng WooCommerce #10421 đã tạo thành công trên Nhanh.vn với ID #ORD-NH-90412.', 'status' => 'success', 'ms' => 145],
             ['time' => '17:45:00', 'type' => 'price_update', 'ref' => 'POLO-PIMA-01-TRANG-M', 'title' => 'Phát hiện lệch giá bán', 'detail' => 'Nhanh 350.000₫, Website 380.000₫. Chờ đồng bộ theo quy tắc.', 'status' => 'warning', 'ms' => 65],
             ['time' => '17:30:12', 'type' => 'stock_update', 'ref' => 'JEAN-SLIM-COGIAN-XANH-31', 'title' => 'Phát hiện lệch tồn kho', 'detail' => 'Nhanh 18, Website 25. Xuất kho tại cửa hàng chưa phản ánh.', 'status' => 'warning', 'ms' => 72],
             ['time' => '17:12:03', 'type' => 'category_sync', 'ref' => 'CAT-305', 'title' => 'Đồng bộ danh mục sản phẩm Mỹ Phẩm & Chăm Sóc', 'detail' => 'Ánh xạ sang term taxonomy product_cat "Làm Đẹp & Chăm Sóc Da".', 'status' => 'success', 'ms' => 120],
@@ -59,7 +70,7 @@ class Data
             ['category' => 'Mỹ Phẩm & Chăm Sóc', 'ratio' => 5.8, 'dsi' => 18, 'value' => 72000000, 'sold' => 38950000, 'fast' => 50, 'steady' => 30, 'slow' => 15, 'stagnant' => 5],
         ];
 
-        return compact('products', 'term_maps', 'logs', 'revenue', 'turnover');
+        return compact('products', 'term_maps', 'order_maps', 'logs', 'revenue', 'turnover');
     }
 
     private static function p(string $code, string $name, string $cat, string $brand, int $nPrice, int $nStock, ?string $webId, ?int $wPrice, ?int $wStock, string $status, string $velocity, int $days, int $sold, int $rev): array

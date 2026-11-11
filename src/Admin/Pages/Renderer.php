@@ -42,6 +42,9 @@ class Renderer
             case 'nhanh-syncer-categories':
                 $this->page_taxonomies($data, $settings);
                 break;
+            case 'nhanh-syncer-orders':
+                $this->page_orders($data, $settings);
+                break;
             case 'nhanh-syncer-logs':
                 $this->page_logs($data, $settings);
                 break;
@@ -64,10 +67,6 @@ class Renderer
 
     private function resolveUiMode(array $settings): string
     {
-        $override = isset($_GET['ui_mode']) ? sanitize_key(wp_unslash($_GET['ui_mode'])) : '';
-        if (in_array($override, ['compact', 'advanced'], true)) {
-            return $override;
-        }
         $mode = isset($settings['ui_mode']) ? sanitize_key((string) $settings['ui_mode']) : 'compact';
         return in_array($mode, ['compact', 'advanced'], true) ? $mode : 'compact';
     }
@@ -107,26 +106,6 @@ class Renderer
         ];
     }
 
-    private function renderModeBar(string $page, array $settings, string $context, array $extraParams = []): void
-    {
-        $mode = $this->resolveUiMode($settings);
-        $perPage = $this->perPageFor($context, $settings);
-        $base = ['page' => $page];
-        foreach ($extraParams as $k => $v) {
-            if ($v !== '' && $v !== null) $base[$k] = $v;
-        }
-        $compactUrl = add_query_arg(array_merge($base, ['ui_mode' => 'compact']), admin_url('admin.php'));
-        $advancedUrl = add_query_arg(array_merge($base, ['ui_mode' => 'advanced']), admin_url('admin.php'));
-        $modeLabel = $mode === 'advanced' ? 'Advanced (dữ liệu lớn, nhiều cột/lọc/phân trang)' : 'Compact (gọn, phù hợp ít sản phẩm)';
-        echo '<div class="nhanh-mode-bar">';
-        echo '<div class="nhanh-mode-info"><span class="dashicons dashicons-performance"></span><strong>Chế độ hiển thị:</strong> ' . esc_html($modeLabel) . ' <span class="muted">· ' . esc_html((string)$perPage) . ' dòng/trang</span></div>';
-        echo '<div class="nhanh-mode-actions">';
-        echo '<a class="button ' . ($mode === 'compact' ? 'button-primary' : '') . '" href="' . esc_url($compactUrl) . '">Compact</a> ';
-        echo '<a class="button ' . ($mode === 'advanced' ? 'button-primary' : '') . '" href="' . esc_url($advancedUrl) . '">Advanced</a> ';
-        echo '<a class="button" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-settings')) . '">Tùy chỉnh</a>';
-        echo '</div></div>';
-    }
-
     private function renderPagination(string $page, array $pagination, array $extraParams = []): void
     {
         $paged = (int) $pagination['paged'];
@@ -137,8 +116,6 @@ class Renderer
         $from = $total > 0 ? $offset + 1 : 0;
         $to = min($offset + $perPage, $total);
         $base = ['page' => $page, 'per_page' => $perPage];
-        $uiMode = isset($_GET['ui_mode']) ? sanitize_key(wp_unslash($_GET['ui_mode'])) : '';
-        if ($uiMode) $base['ui_mode'] = $uiMode;
         foreach ($extraParams as $k => $v) {
             $base[$k] = $v;
         }
@@ -180,6 +157,7 @@ class Renderer
         echo '<span>Cập nhật: <code>' . $last . '</code></span>';
         echo '</div>';
         echo '<div class="nhanh-syncer-header-actions">';
+        echo '<button type="button" class="button nhanh-sidebar-toggle" aria-expanded="true" aria-controls="nhanh-syncer-sidebar" title="Thu gọn/mở rộng menu"><span class="dashicons dashicons-menu-alt2" aria-hidden="true"></span> <span class="nhanh-sidebar-toggle-text">Thu gọn menu</span></button>';
         echo '<a class="button" href="' . esc_url(admin_url('admin.php?page=' . $page)) . '">Làm mới</a>';
         if ($page !== 'nhanh-syncer-settings') {
             echo '<a class="button button-primary" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-settings')) . '">Cấu hình API</a>';
@@ -215,7 +193,7 @@ class Renderer
         }
         $alerts = $mismatch + $unlinked;
 
-        echo '<aside class="nhanh-syncer-sidebar">';
+        echo '<aside id="nhanh-syncer-sidebar" class="nhanh-syncer-sidebar">';
         echo '<div class="nhanh-syncer-side-brand"><span class="dashicons dashicons-update-alt"></span><div><strong>Nhanh Data 2-Way Syncer</strong><small>Nhanh.vn ↔ WooCommerce</small></div></div>';
 
         foreach ($groups as $gid => $gmeta) {
@@ -352,12 +330,8 @@ class Renderer
         }));
         $pageData = $this->paginate($filtered, $perPage, $paged);
         $rows = $pageData['items'];
-        $uiModeParam = isset($_GET['ui_mode']) ? sanitize_key(wp_unslash($_GET['ui_mode'])) : '';
-
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-admin-links"></span> Liên Kết Sản Phẩm (Nhanh.vn ↔ WooCommerce)</h3><span class="muted">' . esc_html(number_format_i18n(count($filtered))) . ' / ' . esc_html(number_format_i18n(count($products))) . ' sản phẩm (lọc) · hỗ trợ phân trang cho catalog lớn</span></div>';
-        $this->renderModeBar('nhanh-syncer-mapping', $settings, 'products', ['q' => $q, 'sync_status' => $status !== 'all' ? $status : '', 'category' => $category, 'brand' => $brand]);
         echo '<form method="get" class="nhanh-filters nhanh-filters-advanced"><input type="hidden" name="page" value="nhanh-syncer-mapping" />';
-        if ($uiModeParam !== '') echo '<input type="hidden" name="ui_mode" value="' . esc_attr($uiModeParam) . '" />';
         echo '<input type="hidden" name="per_page" value="' . esc_attr((string)$perPage) . '" />';
         echo '<input type="search" name="q" value="' . esc_attr($q) . '" class="regular-text" placeholder="Tìm SKU, tên, danh mục, thương hiệu, ID..." /> ';
         echo '<select name="sync_status"><option value="all">Tất cả trạng thái</option><option value="synced"' . selected($status,'synced',false) . '>Đã khớp</option><option value="price_mismatch"' . selected($status,'price_mismatch',false) . '>Lệch giá</option><option value="stock_mismatch"' . selected($status,'stock_mismatch',false) . '>Lệch tồn</option><option value="unlinked"' . selected($status,'unlinked',false) . '>Chưa liên kết</option></select> ';
@@ -373,7 +347,7 @@ class Renderer
             echo '<option value="' . $opt . '"' . selected($perPage,$opt,false) . '>' . $opt . '/trang</option>';
         }
         echo '</select> ';
-        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-mapping', 'ui_mode'=>$mode], admin_url('admin.php'))) . '">Xóa lọc</a></form>';
+        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-mapping')) . '">Xóa lọc</a></form>';
 
         $dense = $mode === 'advanced' ? ' nhanh-table-dense' : '';
         echo '<div class="nhanh-table-wrap' . ($mode === 'advanced' ? ' nhanh-table-sticky' : '') . '"><table class="widefat striped nhanh-table' . $dense . '"><thead><tr>';
@@ -414,7 +388,7 @@ class Renderer
                 echo '<td><div class="mono">Nhanh: <strong>' . esc_html($this->vnd($p['nhanh_price'])) . '</strong></div><div class="mono ' . ($priceDiff ? 'diff' : '') . '">Web: <strong>' . ($p['web_price'] === null ? '—' : esc_html($this->vnd($p['web_price']))) . '</strong></div></td>';
             }
             echo '<td class="nhanh-actions">';
-            echo '<a class="button button-small" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-mapping','q'=>$p['nhanh_code'],'ui_mode'=>$mode], admin_url('admin.php'))) . '">Đối soát</a> ';
+            echo '<a class="button button-small" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-mapping','q'=>$p['nhanh_code']], admin_url('admin.php'))) . '">Đối soát</a> ';
             if (empty($p['web_id'])) echo '<a class="button button-small button-primary" href="#">Liên kết</a>';
             else echo '<a class="button button-small" href="#">Đồng bộ</a>';
             echo '</td></tr>';
@@ -425,7 +399,7 @@ class Renderer
         }
         echo '</tbody></table></div>';
         $this->renderPagination('nhanh-syncer-mapping', $pageData, ['q' => $q, 'sync_status' => $status, 'category' => $category, 'brand' => $brand]);
-        echo '<p class="description">Gợi ý: với hàng triệu sản phẩm/biến thể, dùng <strong>Advanced</strong> + bộ lọc + phân trang server-side (kết nối bảng <code>nhanh_sync_product_map</code>, index theo <code>nhanh_code/sync_status/updated_at</code>) và tránh tải toàn bộ dữ liệu vào trình duyệt.</p>';
+        echo '<p class="description">Gợi ý: với hàng triệu sản phẩm/biến thể, cấu hình chế độ <strong>Advanced</strong> trong <a href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-settings')) . '">Cấu hình &amp; Tự Động Hóa</a> và dùng lọc + phân trang server-side (bảng <code>nhanh_sync_product_map</code>, index theo <code>nhanh_code/sync_status/updated_at</code>) để tránh tải toàn bộ dữ liệu.</p>';
         echo '</section>';
     }
 
@@ -438,8 +412,6 @@ class Renderer
         $q = isset($_GET['q']) ? sanitize_text_field(wp_unslash($_GET['q'])) : '';
         $paged = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
         $perPage = $this->perPageFor('terms', $settings);
-        $uiModeParam = isset($_GET['ui_mode']) ? sanitize_key(wp_unslash($_GET['ui_mode'])) : '';
-
         $filtered = array_values(array_filter($terms, function ($t) use ($type, $status, $q) {
             if ($type !== 'all' && ($t['type'] ?? 'category') !== $type) return false;
             if ($status !== 'all' && ($t['status'] ?? '') !== $status) return false;
@@ -469,9 +441,7 @@ class Renderer
         }
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-networking"></span> Đồng Bộ Danh Mục & Thương Hiệu Sản Phẩm (Nhanh.vn ↔ WooCommerce)</h3><span class="muted">' . esc_html(number_format_i18n(count($filtered))) . ' / ' . esc_html(number_format_i18n($total)) . ' term</span></div>';
-        $this->renderModeBar('nhanh-syncer-categories', $settings, 'terms', ['term_type' => $type !== 'all' ? $type : '', 'map_status' => $status !== 'all' ? $status : '', 'q' => $q]);
         echo '<form method="get" class="nhanh-filters nhanh-filters-advanced"><input type="hidden" name="page" value="nhanh-syncer-categories" />';
-        if ($uiModeParam !== '') echo '<input type="hidden" name="ui_mode" value="' . esc_attr($uiModeParam) . '" />';
         echo '<input type="hidden" name="per_page" value="' . esc_attr((string)$perPage) . '" />';
         echo '<input type="search" name="q" value="' . esc_attr($q) . '" class="regular-text" placeholder="Tìm tên/ID danh mục, thương hiệu..." /> ';
         echo '<select name="term_type"><option value="all"' . selected($type,'all',false) . '>Tất cả (Danh mục & Thương hiệu)</option><option value="category"' . selected($type,'category',false) . '>Danh mục sản phẩm (product_cat)</option><option value="brand"' . selected($type,'brand',false) . '>Thương hiệu (' . esc_attr($brandTax) . ')</option></select> ';
@@ -479,7 +449,7 @@ class Renderer
         echo '<select name="per_page">';
         foreach ([20,50,100,200,500] as $opt) { if ($mode === 'compact' && $opt > 100) continue; echo '<option value="' . $opt . '"' . selected($perPage,$opt,false) . '>' . $opt . '/trang</option>'; }
         echo '</select> ';
-        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-categories','ui_mode'=>$mode], admin_url('admin.php'))) . '">Xóa lọc</a></form>';
+        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-categories')) . '">Xóa lọc</a></form>';
 
         $dense = $mode === 'advanced' ? ' nhanh-table-dense' : '';
         echo '<div class="nhanh-table-wrap' . ($mode === 'advanced' ? ' nhanh-table-sticky' : '') . '"><table class="widefat striped nhanh-table' . $dense . '"><thead><tr>';
@@ -519,7 +489,7 @@ class Renderer
         if (empty($rows)) echo '<tr><td colspan="' . $colspan . '" class="muted">Không có danh mục hoặc thương hiệu phù hợp.</td></tr>';
         echo '</tbody></table></div>';
         $this->renderPagination('nhanh-syncer-categories', $pageData, ['term_type' => $type, 'map_status' => $status, 'q' => $q]);
-        echo '<p class="description">Danh mục (product_cat) và thương hiệu (' . esc_html($brandTax) . ') được quản lý chung qua bảng ánh xạ taxonomy, hỗ trợ nhiều brand/category và phân trang cho catalog lớn.</p>';
+        echo '<p class="description">Danh mục (product_cat) và thương hiệu (' . esc_html($brandTax) . ') được quản lý chung qua bảng ánh xạ taxonomy. Chế độ hiển thị (Compact/Advanced) được cấu hình trong <a href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-settings')) . '">Cấu hình &amp; Tự Động Hóa</a>.</p>';
         echo '</section>';
     }
 
@@ -532,8 +502,6 @@ class Renderer
         $typeFilter = isset($_GET['log_type']) ? sanitize_key(wp_unslash($_GET['log_type'])) : 'all';
         $paged = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
         $perPage = $this->perPageFor('logs', $settings);
-        $uiModeParam = isset($_GET['ui_mode']) ? sanitize_key(wp_unslash($_GET['ui_mode'])) : '';
-
         $filtered = array_values(array_filter($logs, function ($l) use ($q, $st, $typeFilter) {
             if ($st !== 'all' && $l['status'] !== $st) return false;
             if ($typeFilter !== 'all' && ($l['type'] ?? '') !== $typeFilter) return false;
@@ -547,9 +515,7 @@ class Renderer
         $rows = $pageData['items'];
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-backup"></span> Nhật Ký Đồng Bộ & Tra Soát Giao Dịch</h3><span class="muted">' . esc_html(number_format_i18n(count($filtered))) . ' sự kiện</span></div>';
-        $this->renderModeBar('nhanh-syncer-logs', $settings, 'logs', ['q'=>$q,'log_status'=>$st!=='all'?$st:'','log_type'=>$typeFilter!=='all'?$typeFilter:'']);
         echo '<form method="get" class="nhanh-filters nhanh-filters-advanced"><input type="hidden" name="page" value="nhanh-syncer-logs" />';
-        if ($uiModeParam !== '') echo '<input type="hidden" name="ui_mode" value="' . esc_attr($uiModeParam) . '" />';
         echo '<input type="hidden" name="per_page" value="' . esc_attr((string)$perPage) . '" />';
         echo '<input type="search" name="q" value="' . esc_attr($q) . '" class="regular-text" placeholder="Tìm theo tiêu đề, mã, chi tiết..." /> ';
         echo '<select name="log_status"><option value="all">Tất cả trạng thái</option><option value="success"' . selected($st,'success',false) . '>Thành công</option><option value="warning"' . selected($st,'warning',false) . '>Cảnh báo</option><option value="error"' . selected($st,'error',false) . '>Lỗi</option></select> ';
@@ -561,7 +527,7 @@ class Renderer
         echo '<select name="per_page">';
         foreach ([20,50,100,200,500] as $opt) { if ($mode === 'compact' && $opt > 100) continue; echo '<option value="' . $opt . '"' . selected($perPage,$opt,false) . '>' . $opt . '/trang</option>'; }
         echo '</select> ';
-        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-logs','ui_mode'=>$mode], admin_url('admin.php'))) . '">Xóa lọc</a></form>';
+        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-logs')) . '">Xóa lọc</a></form>';
 
         $dense = $mode === 'advanced' ? ' nhanh-table-dense' : '';
         echo '<div class="nhanh-table-wrap' . ($mode === 'advanced' ? ' nhanh-table-sticky' : '') . '"><table class="widefat striped nhanh-table' . $dense . '"><thead><tr>';
@@ -586,7 +552,107 @@ class Renderer
         if (empty($rows)) echo '<tr><td colspan="' . $colspan . '" class="muted">Không có log phù hợp.</td></tr>';
         echo '</tbody></table></div>';
         $this->renderPagination('nhanh-syncer-logs', $pageData, ['q'=>$q,'log_status'=>$st,'log_type'=>$typeFilter]);
-        echo '<p class="description">Lưu ý: tra soát trên hệ thống lớn nên truy vấn theo trang từ bảng <code>nhanh_sync_logs</code> (index <code>event_time/type/status/reference_code/dedupe_key</code>), không nạp toàn bộ log vào bộ nhớ.</p>';
+        echo '<p class="description">Lưu ý: tra soát trên hệ thống lớn nên truy vấn theo trang từ bảng <code>nhanh_sync_logs</code> (index <code>event_time/type/status/reference_code/dedupe_key</code>). Chế độ hiển thị được cấu hình trong <a href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-settings')) . '">Cấu hình &amp; Tự Động Hóa</a>.</p>';
+        echo '</section>';
+    }
+
+    private function page_orders(array $data, array $settings = []): void
+    {
+        $orders = isset($data['order_maps']) ? $data['order_maps'] : [];
+        $mode = $this->resolveUiMode($settings);
+        $q = isset($_GET['q']) ? sanitize_text_field(wp_unslash($_GET['q'])) : '';
+        $status = isset($_GET['sync_status']) ? sanitize_key(wp_unslash($_GET['sync_status'])) : 'all';
+        $source = isset($_GET['source']) ? sanitize_key(wp_unslash($_GET['source'])) : 'all';
+        $paged = isset($_GET['paged']) ? max(1, (int) $_GET['paged']) : 1;
+        $perPage = $this->perPageFor('orders', $settings);
+
+        $filtered = array_values(array_filter($orders, function ($o) use ($q, $status, $source) {
+            if ($status !== 'all' && ($o['sync_status'] ?? '') !== $status) return false;
+            if ($source !== 'all' && ($o['source'] ?? '') !== $source) return false;
+            if ($q !== '') {
+                $hay = strtolower((string)($o['wc_order_id'] ?? '') . ' ' . (string)($o['nhanh_order_id'] ?? '') . ' ' . (string)($o['nhanh_order_code'] ?? ''));
+                if (strpos($hay, strtolower($q)) === false) return false;
+            }
+            return true;
+        }));
+        $pageData = $this->paginate($filtered, $perPage, $paged);
+        $rows = $pageData['items'];
+
+        $totalMapped = count($orders);
+        $synced = count(array_filter($orders, function ($o) { return ($o['sync_status'] ?? '') === 'synced'; }));
+        $pending = count(array_filter($orders, function ($o) { return ($o['sync_status'] ?? '') === 'pending'; }));
+        $failed = count(array_filter($orders, function ($o) { return in_array(($o['sync_status'] ?? ''), ['failed','error'], true); }));
+
+        echo '<div class="nhanh-grid kpis">';
+        $this->kpi('Tổng bản ghi map', number_format_i18n($totalMapped), 'Bảng nhanh_sync_order_map', 'dashicons-database');
+        $this->kpi('Đã đồng bộ', number_format_i18n($synced), 'WC ↔ Nhanh.vn đã khớp', 'dashicons-yes-alt', 'ok');
+        $this->kpi('Đang chờ', number_format_i18n($pending), 'Chờ xử lý / retry', 'dashicons-clock', $pending > 0 ? 'warn' : '');
+        $this->kpi('Lỗi / Thất bại', number_format_i18n($failed), 'Cần tra soát', 'dashicons-warning', $failed > 0 ? 'warn' : 'ok');
+        echo '</div>';
+
+        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-cart"></span> Liên Kết Đơn Hàng (Nhanh.vn ↔ WooCommerce)</h3><span class="muted">' . esc_html(number_format_i18n(count($filtered))) . ' / ' . esc_html(number_format_i18n($totalMapped)) . ' bản ghi · HPOS-safe (<code>wc_order_id</code>)</span></div>';
+        echo '<form method="get" class="nhanh-filters nhanh-filters-advanced"><input type="hidden" name="page" value="nhanh-syncer-orders" />';
+        echo '<input type="hidden" name="per_page" value="' . esc_attr((string)$perPage) . '" />';
+        echo '<input type="search" name="q" value="' . esc_attr($q) . '" class="regular-text" placeholder="Tìm theo WC Order ID, Nhanh ID, mã đơn..." /> ';
+        echo '<select name="sync_status"><option value="all">Tất cả trạng thái</option><option value="synced"' . selected($status,'synced',false) . '>Đã đồng bộ</option><option value="pending"' . selected($status,'pending',false) . '>Đang chờ</option><option value="failed"' . selected($status,'failed',false) . '>Lỗi</option><option value="unlinked"' . selected($status,'unlinked',false) . '>Chưa liên kết</option></select> ';
+        echo '<select name="source"><option value="all">Tất cả chiều</option><option value="wc_to_nhanh"' . selected($source,'wc_to_nhanh',false) . '>Website → Nhanh.vn</option><option value="nhanh_to_wc"' . selected($source,'nhanh_to_wc',false) . '>Nhanh.vn → Website</option></select> ';
+        echo '<select name="per_page">';
+        foreach ([20,50,100,200,500] as $opt) {
+            if ($mode === 'compact' && $opt > 100) continue;
+            echo '<option value="' . $opt . '"' . selected($perPage,$opt,false) . '>' . $opt . '/trang</option>';
+        }
+        echo '</select> ';
+        echo '<button class="button button-primary">Lọc</button> <a class="button" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-orders')) . '">Xóa lọc</a></form>';
+
+        $dense = $mode === 'advanced' ? ' nhanh-table-dense' : '';
+        echo '<div class="nhanh-table-wrap' . ($mode === 'advanced' ? ' nhanh-table-sticky' : '') . '"><table class="widefat striped nhanh-table' . $dense . '"><thead><tr>';
+        if ($mode === 'advanced') {
+            echo '<th>WC Order ID</th><th>Đơn hàng WooCommerce</th><th>Nhanh Order ID</th><th>Mã đơn Nhanh.vn</th><th>Chiều đồng bộ</th><th>Giá trị</th><th>Trạng thái</th><th>Đồng bộ lần cuối</th><th>Thao tác</th>';
+        } else {
+            echo '<th>Đơn hàng WooCommerce</th><th>Đơn hàng Nhanh.vn</th><th>Chiều / Giá trị</th><th>Trạng thái</th><th>Đồng bộ lần cuối</th><th>Thao tác</th>';
+        }
+        echo '</tr></thead><tbody>';
+        foreach ($rows as $o) {
+            $wcId = $o['wc_order_id'] ?? null;
+            $nhanhId = $o['nhanh_order_id'] ?? '';
+            $nhanhCode = $o['nhanh_order_code'] ?? ($nhanhId ? ('ORD-NH-' . $nhanhId) : '');
+            $statusVal = $o['sync_status'] ?? 'unlinked';
+            $sourceVal = $o['source'] ?? '';
+            $sourceLabel = $sourceVal === 'wc_to_nhanh' ? 'Website → Nhanh.vn' : ($sourceVal === 'nhanh_to_wc' ? 'Nhanh.vn → Website' : '—');
+            $total = isset($o['total_amount']) ? $this->vnd($o['total_amount']) : '—';
+            $last = $o['last_synced_at'] ?? '—';
+            $wcEdit = $wcId ? admin_url('post.php?post=' . intval($wcId) . '&action=edit') : '';
+            echo '<tr>';
+            if ($mode === 'advanced') {
+                echo '<td class="mono">' . ($wcId ? esc_html('#' . $wcId) : '<span class="pill bad">Chưa map</span>') . '</td>';
+                echo '<td>' . ($wcId ? '<a href="' . esc_url($wcEdit) . '"><strong>Đơn hàng #' . esc_html((string)$wcId) . '</strong></a>' : '<span class="muted">Chưa liên kết WooCommerce</span>') . '</td>';
+                echo '<td class="mono">' . ($nhanhId !== '' ? esc_html((string)$nhanhId) : '—') . '</td>';
+                echo '<td class="mono">' . ($nhanhCode !== '' ? esc_html($nhanhCode) : '<span class="pill bad">Chưa map</span>') . '</td>';
+                echo '<td>' . esc_html($sourceLabel) . '</td>';
+                echo '<td class="mono">' . esc_html($total) . '</td>';
+                echo '<td>' . $this->status_badge($statusVal) . '</td>';
+                echo '<td class="muted small">' . esc_html($last) . '</td>';
+            } else {
+                echo '<td>' . ($wcId ? '<a href="' . esc_url($wcEdit) . '"><strong>Đơn hàng #' . esc_html((string)$wcId) . '</strong></a>' : '<span class="pill bad">Chưa liên kết Website</span>') . '<div class="muted mono">wc_order_id: ' . esc_html($wcId ? (string)$wcId : '—') . '</div></td>';
+                echo '<td><strong class="mono">' . esc_html($nhanhCode !== '' ? $nhanhCode : '—') . '</strong><div class="muted mono">nhanh_order_id: ' . esc_html($nhanhId !== '' ? (string)$nhanhId : '—') . '</div></td>';
+                echo '<td>' . esc_html($sourceLabel) . '<div class="mono"><strong>' . esc_html($total) . '</strong></div></td>';
+                echo '<td>' . $this->status_badge($statusVal) . '</td>';
+                echo '<td class="muted small">' . esc_html($last) . '</td>';
+            }
+            echo '<td class="nhanh-actions">';
+            if ($wcId) echo '<a class="button button-small" href="' . esc_url($wcEdit) . '">Xem đơn WC</a> ';
+            echo '<a class="button button-small" href="' . esc_url(add_query_arg(['page'=>'nhanh-syncer-orders','q'=>$nhanhCode ?: (string)$wcId], admin_url('admin.php'))) . '">Đối soát</a> ';
+            if ($statusVal === 'failed' || $statusVal === 'unlinked' || empty($nhanhId)) echo '<a class="button button-small button-primary" href="#">Liên kết / Đồng bộ</a>';
+            else echo '<a class="button button-small" href="#">Đồng bộ lại</a>';
+            echo '</td></tr>';
+        }
+        $colspan = $mode === 'advanced' ? 9 : 6;
+        if (empty($rows)) {
+            echo '<tr><td colspan="' . $colspan . '" class="muted">Không tìm thấy bản ghi liên kết đơn hàng phù hợp bộ lọc.</td></tr>';
+        }
+        echo '</tbody></table></div>';
+        $this->renderPagination('nhanh-syncer-orders', $pageData, ['q' => $q, 'sync_status' => $status, 'source' => $source]);
+        echo '<p class="description">Gợi ý: tra cứu và đối soát đơn hàng trên hệ thống lớn nên truy vấn theo trang từ bảng <code>nhanh_sync_order_map</code> (index <code>wc_order_id/nhanh_order_id/sync_status/updated_at</code>). Hỗ trợ HPOS thông qua <code>wc_order_id</code>.</p>';
         echo '</section>';
     }
 
@@ -677,9 +743,11 @@ class Renderer
         $this->field_text('products_per_page_advanced', 'Sản phẩm/trang (Advanced)', (string)($settings['products_per_page_advanced'] ?? 100), 'number');
         $this->field_text('terms_per_page_compact', 'Danh mục & Thương hiệu/trang (Compact)', (string)($settings['terms_per_page_compact'] ?? 20), 'number');
         $this->field_text('terms_per_page_advanced', 'Danh mục & Thương hiệu/trang (Advanced)', (string)($settings['terms_per_page_advanced'] ?? 100), 'number');
+        $this->field_text('orders_per_page_compact', 'Đơn hàng/trang (Compact)', (string)($settings['orders_per_page_compact'] ?? 20), 'number');
+        $this->field_text('orders_per_page_advanced', 'Đơn hàng/trang (Advanced)', (string)($settings['orders_per_page_advanced'] ?? 100), 'number');
         $this->field_text('logs_per_page_compact', 'Log/trang (Compact)', (string)($settings['logs_per_page_compact'] ?? 20), 'number');
         $this->field_text('logs_per_page_advanced', 'Log/trang (Advanced)', (string)($settings['logs_per_page_advanced'] ?? 100), 'number');
-        echo '</div><p class="description">Khuyến nghị Advanced cho hệ thống hàng triệu products/variations: giữ per-page 100–200, luôn lọc trước, dùng truy vấn phân trang (LIMIT/OFFSET hoặc keyset) trên bảng <code>nhanh_sync_product_map</code>, <code>nhanh_sync_term_map</code>, <code>nhanh_sync_logs</code>.</p></section>';
+        echo '</div><p class="description">Khuyến nghị Advanced cho hệ thống hàng triệu products/variations/orders: giữ per-page 100–200, luôn lọc trước, dùng truy vấn phân trang (LIMIT/OFFSET hoặc keyset) trên bảng <code>nhanh_sync_product_map</code>, <code>nhanh_sync_term_map</code>, <code>nhanh_sync_order_map</code>, <code>nhanh_sync_logs</code>.</p></section>';
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-database"></span> Kiến trúc DB & Tham chiếu WooCommerce</h3><span class="muted">dbDelta · schema v' . esc_html(defined('NHANH_SYNCER_DB_VERSION') ? NHANH_SYNCER_DB_VERSION : 'n/a') . '</span></div>';
         echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Bảng (prefix)</th><th>Mục đích</th><th>Tham chiếu WooCommerce</th></tr></thead><tbody>';

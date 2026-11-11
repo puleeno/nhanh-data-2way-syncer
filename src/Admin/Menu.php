@@ -58,13 +58,18 @@ class Menu
                 'group' => 'dashboard',
             ],
             'nhanh-syncer-mapping' => [
-                'title' => __('Liên Kết & Đối Soát Nhanh.vn ↔ Website', 'nhanh-data-2way-syncer'),
+                'title' => __('Liên Kết & Đối Soát Sản Phẩm Nhanh.vn ↔ WooCommerce', 'nhanh-data-2way-syncer'),
                 'menu_title' => __('Liên kết Sản phẩm', 'nhanh-data-2way-syncer'),
                 'group' => 'catalog',
             ],
             'nhanh-syncer-categories' => [
                 'title' => __('Đồng Bộ Danh Mục & Thương Hiệu Sản Phẩm', 'nhanh-data-2way-syncer'),
                 'menu_title' => __('Danh mục & Thương hiệu', 'nhanh-data-2way-syncer'),
+                'group' => 'catalog',
+            ],
+            'nhanh-syncer-orders' => [
+                'title' => __('Liên Kết & Đồng Bộ Đơn Hàng Nhanh.vn ↔ WooCommerce', 'nhanh-data-2way-syncer'),
+                'menu_title' => __('Liên kết Đơn hàng', 'nhanh-data-2way-syncer'),
                 'group' => 'catalog',
             ],
             'nhanh-syncer-logs' => [
