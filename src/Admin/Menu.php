@@ -25,7 +25,7 @@ class Menu
     {
         add_menu_page(
             __('Nhanh Data 2-Way Syncer', 'nhanh-data-2way-syncer'),
-            __('Nhanh Data 2-Way Syncer', 'nhanh-data-2way-syncer'),
+            __('Nhanh Syncer', 'nhanh-data-2way-syncer'),
             'manage_options',
             self::SLUG,
             [$this, 'render_page'],
