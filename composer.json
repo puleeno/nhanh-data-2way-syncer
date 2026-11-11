@@ -12,6 +12,6 @@
         }
     ],
     "require": {
-        "puleeno/nhanh-vn-sdk": "^0.4.3"
+        "puleeno/nhanh-vn-sdk": "^1.0.0"
     }
 }
