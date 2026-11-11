@@ -11,12 +11,14 @@ class Defaults
      */
     public static function settings(): array
     {
+        $settingsUrl = function_exists('admin_url') ? admin_url('admin.php?page=nhanh-syncer-settings') : '';
         return [
             'app_id' => '',
             'secret_key' => '',
             'access_token' => '',
             'business_id' => '',
             'business_name' => '',
+            'return_link' => $settingsUrl,
             'webhook_url' => function_exists('home_url') ? home_url('/wp-json/nhanh-syncer/v1/webhook') : '',
             'webhook_secret' => '',
             'webhook_active' => 1,

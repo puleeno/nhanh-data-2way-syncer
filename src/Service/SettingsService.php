@@ -46,6 +46,9 @@ class SettingsService
         if (empty($current['webhook_url']) && function_exists('home_url')) {
             $current['webhook_url'] = home_url('/wp-json/nhanh-syncer/v1/webhook');
         }
+        if (empty($current['return_link']) && function_exists('admin_url')) {
+            $current['return_link'] = admin_url('admin.php?page=nhanh-syncer-settings');
+        }
         $this->repository->save($current);
         return $current;
     }
@@ -85,12 +88,18 @@ class SettingsService
             return $v;
         };
 
+        $returnLink = $url('return_link');
+        if ($returnLink === '' && function_exists('admin_url')) {
+            $returnLink = admin_url('admin.php?page=nhanh-syncer-settings');
+        }
+
         return [
             'app_id' => $text('app_id'),
             'secret_key' => $text('secret_key'),
             'access_token' => $text('access_token'),
             'business_id' => $text('business_id'),
             'business_name' => $text('business_name'),
+            'return_link' => $returnLink,
             'webhook_url' => $url('webhook_url'),
             'webhook_secret' => $text('webhook_secret'),
             'webhook_active' => $bool('webhook_active'),

@@ -705,9 +705,17 @@ class Renderer
     {
         $saved = isset($_GET['nhanh_saved']);
         $test = isset($_GET['nhanh_test']) ? sanitize_key(wp_unslash($_GET['nhanh_test'])) : '';
+        $oauth = isset($_GET['nhanh_oauth']) ? sanitize_key(wp_unslash($_GET['nhanh_oauth'])) : '';
         if ($saved) echo '<div class="notice notice-success is-dismissible"><p>Đã lưu cấu hình Nhanh Data 2-Way Syncer.</p></div>';
         if ($test === 'ok') echo '<div class="notice notice-success is-dismissible"><p>Kết nối API Nhanh.vn thành công (mô phỏng kiểm tra cấu hình).</p></div>';
         if ($test === 'fail') echo '<div class="notice notice-error is-dismissible"><p>Chưa thể kết nối: vui lòng kiểm tra App ID và Access Token.</p></div>';
+        if ($oauth === 'ok') echo '<div class="notice notice-success is-dismissible"><p>Authorize thành công: đã nhận Access Token từ Nhanh.vn. Hãy lưu/kiểm tra kết nối nếu cần.</p></div>';
+        if ($oauth === 'denied') echo '<div class="notice notice-error is-dismissible"><p>Authorize bị hủy hoặc bị từ chối trên Nhanh.vn.</p></div>';
+        if ($oauth === 'invalid_verify') echo '<div class="notice notice-error is-dismissible"><p>Authorize thất bại: <code>verifyCode</code> không khớp (bảo vệ CSRF theo spec v3). Vui lòng thử lại.</p></div>';
+        if ($oauth === 'missing_app_id') echo '<div class="notice notice-error is-dismissible"><p>Chưa thể authorize: vui lòng nhập App ID và lưu cấu hình trước.</p></div>';
+        if ($oauth === 'missing_credentials') echo '<div class="notice notice-error is-dismissible"><p>Chưa thể authorize: cần App ID và Secret Key để đổi access code lấy access token.</p></div>';
+        if ($oauth === 'no_token') echo '<div class="notice notice-error is-dismissible"><p>Authorize không thành công: không nhận được Access Token từ Nhanh.vn.</p></div>';
+        if ($oauth === 'error') echo '<div class="notice notice-error is-dismissible"><p>Có lỗi trong quá trình authorize/trao đổi token với Nhanh.vn. Vui lòng kiểm tra App ID, Secret Key và thử lại.</p></div>';
 
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" class="nhanh-settings-form">';
         echo '<input type="hidden" name="action" value="nhanh_syncer_save_settings" />';
@@ -718,7 +726,37 @@ class Renderer
         $this->field_text('business_id', 'Business ID (Doanh Nghiệp)', $settings['business_id'] ?? '');
         $this->field_text('business_name', 'Tên doanh nghiệp / cửa hàng', $settings['business_name'] ?? '', 'text', false);
         $this->field_text('secret_key', 'Secret Key (Khóa Bí Mật)', $settings['secret_key'] ?? '', 'password');
-        $this->field_text('access_token', 'Access Token', $settings['access_token'] ?? '', 'password', false, 'full');
+        $returnLinkDefault = function_exists('admin_url') ? admin_url('admin.php?page=nhanh-syncer-settings') : '';
+        $returnLink = isset($settings['return_link']) && trim((string)$settings['return_link']) !== '' ? (string)$settings['return_link'] : $returnLinkDefault;
+        $appIdPreview = isset($settings['app_id']) ? trim((string)$settings['app_id']) : '';
+        echo '<div class="nhanh-field full"><label for="nhanh_return_link">Redirect URL (OAuth Callback) — phải khớp CHÍNH XÁC URL đã đăng ký trên Nhanh.vn</label>';
+        echo '<input type="text" id="nhanh_return_link" name="return_link" value="' . esc_attr($returnLink) . '" class="mono regular-text" onclick="this.select();" />';
+        echo '<p class="description">URL này sẽ được gửi làm <code>returnLink</code> khi authorize và phải trùng khớp tuyệt đối với Return Link/Redirect URL đã cấu hình trong ứng dụng trên Nhanh.vn (kể cả http/https, domain, path, query, dấu <code>/</code>). Sao chép/dán đúng URL đã đăng ký trên Nhanh.vn rồi bấm <strong>Lưu cấu hình</strong>. Sai lệch sẽ gây lỗi <code>ERR_INVALID_DATA (Invalid appId or returnLink...)</code>.</p>';
+        if ($appIdPreview !== '') {
+            $previewAuth = 'https://nhanh.vn/oauth?appId=' . rawurlencode($appIdPreview) . '&service=pos&verifyCode={VERIFY_CODE}&returnLink=' . rawurlencode($returnLink);
+            echo '<p class="description">Authorize URL (xem trước, theo spec v3): <code style="word-break:break-all;">' . esc_html($previewAuth) . '</code></p>';
+            echo '<p class="description">Luồng v3 yêu cầu <code>service</code> (pos/ship) và <code>verifyCode</code> (tạo ngẫu nhiên 12–64 ký tự, lưu tạm và đối chiếu khi callback) trong URL authorize; khi đổi token cũng phải gửi kèm <code>verifyCode</code>. Nhanh.vn trả <code>ERR_INVALID_DATA</code> nếu <code>appId</code>/<code>returnLink</code>/<code>service</code>/<code>verifyCode</code> không hợp lệ hoặc không khớp cấu hình app.</p>';
+        }
+        echo '</div>';
+        $accessToken = isset($settings['access_token']) ? trim((string) $settings['access_token']) : '';
+        if ($accessToken === '') {
+            $authUrl = wp_nonce_url(admin_url('admin-post.php?action=nhanh_syncer_oauth_authorize'), 'nhanh_syncer_oauth_authorize');
+            $appId = isset($settings['app_id']) ? trim((string) $settings['app_id']) : '';
+            $secretKey = isset($settings['secret_key']) ? trim((string) $settings['secret_key']) : '';
+            echo '<div class="nhanh-field full"><label>Access Token</label>';
+            if ($appId === '' || $secretKey === '') {
+                echo '<p class="description" style="margin:4px 0 8px;color:#b91c1c;">Chưa có Access Token. Vui lòng nhập <strong>App ID</strong> và <strong>Secret Key</strong>, bấm <strong>Lưu cấu hình</strong>, sau đó quay lại để Authorize với Nhanh.vn.</p>';
+                echo '<button type="button" class="button button-primary" disabled>Authorize với Nhanh.vn</button>';
+            } else {
+                echo '<p class="description" style="margin:4px 0 8px;">Chưa có Access Token. Bấm Authorize để kết nối Nhanh.vn và cấp token tự động (App ID, Secret Key và Redirect URL phải khớp cấu hình app trên Nhanh.vn).</p>';
+                echo '<a class="button button-primary" href="' . esc_url($authUrl) . '">Authorize với Nhanh.vn</a>';
+            }
+            echo '<input type="hidden" name="access_token" value="" />';
+            echo '</div>';
+        } else {
+            $this->field_text('access_token', 'Access Token', $accessToken, 'password', false, 'full');
+            echo '<div class="nhanh-field full"><p class="description">Đã có Access Token. Nếu cần cấp lại, xóa token và lưu cấu hình để hiện nút Authorize. Redirect URL phải khớp app Nhanh.vn: <code>' . esc_html($returnLink) . '</code></p></div>';
+        }
         echo '</div></section>';
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-rss"></span> Webhook & Đồng Bộ Tự Động</h3></div><div class="nhanh-form-grid">';
