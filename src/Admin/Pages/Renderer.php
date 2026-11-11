@@ -2,15 +2,29 @@
 
 namespace Puleeno\NhanhVn\Syncer\Admin\Pages;
 
+use Puleeno\NhanhVn\Syncer\Contracts\SyncStatusResolverInterface;
 use Puleeno\NhanhVn\Syncer\Plugin;
+use Puleeno\NhanhVn\Syncer\Service\TermTaxonomyResolver;
+use Puleeno\NhanhVn\Syncer\Support\Formatter;
 
 class Renderer
 {
+    /** @var SyncStatusResolverInterface|null */
+    private $statusResolver;
+
+    /** @var TermTaxonomyResolver|null */
+    private $taxonomyResolver;
+
+    public function __construct(?SyncStatusResolverInterface $statusResolver = null, ?TermTaxonomyResolver $taxonomyResolver = null)
+    {
+        $this->statusResolver = $statusResolver;
+        $this->taxonomyResolver = $taxonomyResolver;
+    }
+
     public function render(string $page, array $submenus): void
     {
         $settings = Plugin::get_settings();
         $meta = $submenus[$page] ?? reset($submenus);
-        $group = $meta['group'] ?? 'dashboard';
         $data = Data::get();
 
         echo '<div class="wrap nhanh-syncer-wrap">';
@@ -138,14 +152,13 @@ class Renderer
         $products = $data['products'];
         $revenue = $data['revenue'];
         $total = count($products);
-        $linked = 0; $mismatch = 0; $unlinked = 0; $stock = 0; $inv = 0; $soldRev = 0;
+        $linked = 0; $mismatch = 0; $unlinked = 0; $stock = 0; $inv = 0;
         foreach ($products as $p) {
             if (!empty($p['web_id'])) $linked++;
             if (in_array($p['sync_status'], ['price_mismatch', 'stock_mismatch'], true)) $mismatch++;
             if ($p['sync_status'] === 'unlinked') $unlinked++;
             $stock += (int)$p['nhanh_stock'];
             $inv += (int)$p['nhanh_stock'] * (int)$p['nhanh_price'];
-            $soldRev += (int)$p['revenue_month'];
         }
         $mapRate = $total ? ($linked / $total * 100) : 0;
         $today = end($revenue);
@@ -187,6 +200,8 @@ class Renderer
         $this->kv('Tự động cập nhật Tồn', !empty($settings['auto_stock_update']) ? 'Đang bật (Buffer: ' . (int)($settings['safety_stock_buffer'] ?? 0) . ')' : 'Tắt', !empty($settings['auto_stock_update']));
         $this->kv('Webhook sự kiện tức thì', !empty($settings['webhook_active']) ? 'Kích hoạt' : 'Tắt', !empty($settings['webhook_active']));
         $this->kv('Kết nối API', !empty($settings['is_connected']) ? 'OK · ' . (int)($settings['ping_latency_ms'] ?? 0) . 'ms' : 'Chưa kết nối', !empty($settings['is_connected']));
+        $brandTax = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : ($settings['brand_taxonomy'] ?? 'product_brand');
+        $this->kv('Taxonomy danh mục/thương hiệu', 'product_cat / ' . $brandTax, true);
         echo '</div></section>';
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-randomize"></span> Sản phẩm cần đối soát</h3><a href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-mapping')) . '">Xem tất cả →</a></div><div class="nhanh-list">';
@@ -271,12 +286,13 @@ class Renderer
         $this->kpi('Tổng term Nhanh.vn', (string)$total, $catCount . ' danh mục · ' . $brandCount . ' thương hiệu', 'dashicons-networking');
         $this->kpi('Đã liên kết WC', (string)$mapped, 'Khớp product_cat / product_brand', 'dashicons-yes-alt', 'ok');
         $this->kpi('Chưa ánh xạ', (string)$unmapped, 'Cần map vào taxonomy WooCommerce', 'dashicons-warning', $unmapped ? 'warn' : 'ok');
-        $this->kpi('Taxonomy tham chiếu', '2 loại', 'product_cat (categories) · product_brand (brands)', 'dashicons-tag', 'accent');
+        $brandTax = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : 'product_brand';
+        $this->kpi('Taxonomy tham chiếu', '2 loại', 'product_cat (categories) · ' . $brandTax . ' (brands)', 'dashicons-tag', 'accent');
         echo '</div>';
 
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-networking"></span> Đồng Bộ Danh Mục & Thương Hiệu (Nhanh.vn ↔ WooCommerce)</h3><a class="button button-primary" href="' . esc_url(admin_url('admin.php?page=nhanh-syncer-categories')) . '">Đồng bộ toàn bộ</a></div>';
         echo '<form method="get" class="nhanh-filters"><input type="hidden" name="page" value="nhanh-syncer-categories" />';
-        echo '<select name="term_type"><option value="all"' . selected($type,'all',false) . '>Tất cả (Danh mục & Thương hiệu)</option><option value="category"' . selected($type,'category',false) . '>Danh mục (product_cat)</option><option value="brand"' . selected($type,'brand',false) . '>Thương hiệu (product_brand)</option></select> ';
+        echo '<select name="term_type"><option value="all"' . selected($type,'all',false) . '>Tất cả (Danh mục & Thương hiệu)</option><option value="category"' . selected($type,'category',false) . '>Danh mục (product_cat)</option><option value="brand"' . selected($type,'brand',false) . '>Thương hiệu (' . esc_attr($brandTax) . ')</option></select> ';
         echo '<button class="button">Lọc</button></form>';
         echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Loại</th><th>Term trên Nhanh.vn</th><th>WC Taxonomy</th><th>Số SP</th><th>Term WooCommerce tương ứng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>';
         foreach ($filtered as $t) {
@@ -397,7 +413,8 @@ class Renderer
         $this->field_text('webhook_secret', 'Webhook Secret', $settings['webhook_secret'] ?? '', 'text');
         $this->field_text('sync_interval_minutes', 'Chu kỳ đồng bộ (phút)', (string)($settings['sync_interval_minutes'] ?? 15), 'number');
         $this->field_text('safety_stock_buffer', 'Safety stock buffer', (string)($settings['safety_stock_buffer'] ?? 2), 'number');
-        $this->field_text('brand_taxonomy', 'WooCommerce brand taxonomy', $settings['brand_taxonomy'] ?? 'product_brand', 'text', true, 'full');
+        $brandTaxDefault = $this->taxonomyResolver ? $this->taxonomyResolver->brandTaxonomy() : 'product_brand';
+        $this->field_text('brand_taxonomy', 'WooCommerce brand taxonomy', $settings['brand_taxonomy'] ?? $brandTaxDefault, 'text', true, 'full');
         echo '</div><div class="nhanh-checks">';
         $this->field_check('webhook_active', 'Kích hoạt webhook thời gian thực', !empty($settings['webhook_active']));
         $this->field_check('auto_sync_enabled', 'Bật đồng bộ tự động theo chu kỳ', !empty($settings['auto_sync_enabled']));
@@ -406,7 +423,7 @@ class Renderer
         $this->field_check('auto_create_missing_web_product', 'Tự tạo sản phẩm web nếu chưa tồn tại', !empty($settings['auto_create_missing_web_product']));
         echo '</div></section>';
 
-        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-database"></span> Kiến trúc DB & Tham chiếu WooCommerce</h3><span class="muted">dbDelta · schema v' . esc_html(NHANH_SYNCER_DB_VERSION) . '</span></div>';
+        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-database"></span> Kiến trúc DB & Tham chiếu WooCommerce</h3><span class="muted">dbDelta · schema v' . esc_html(defined('NHANH_SYNCER_DB_VERSION') ? NHANH_SYNCER_DB_VERSION : 'n/a') . '</span></div>';
         echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Bảng (prefix)</th><th>Mục đích</th><th>Tham chiếu WooCommerce</th></tr></thead><tbody>';
         $rows = [
             ['nhanh_sync_product_map', 'Ánh xạ & snapshot sản phẩm Nhanh ↔ WC, trạng thái đối soát, metrics', 'wc_product_id/wc_variation_id → product/product_variation, _sku/_price/_stock (lookup/meta)'],
@@ -446,48 +463,41 @@ class Renderer
 
     private function status_badge(string $status): string
     {
-        $map = [
-            'synced' => ['ok', 'Đã khớp & Đồng bộ'],
-            'price_mismatch' => ['warn', 'Lệch giá bán'],
-            'stock_mismatch' => ['warn', 'Lệch tồn kho'],
-            'unlinked' => ['bad', 'Chưa liên kết'],
-            'syncing' => ['neutral', 'Đang đồng bộ'],
-        ];
-        $m = $map[$status] ?? ['neutral', $status];
-        return '<span class="pill ' . $m[0] . '">' . esc_html($m[1]) . '</span>';
+        $m = Formatter::statusBadge($status);
+        return '<span class="pill ' . esc_attr($m[0]) . '">' . esc_html($m[1]) . '</span>';
     }
 
     private function velocity_badge(string $v): string
     {
-        $map = [
-            'fast' => ['ok', 'Luân chuyển nhanh'],
-            'steady' => ['neutral', 'Bán đều'],
-            'slow' => ['warn', 'Chậm luân chuyển'],
-            'stagnant' => ['bad', 'Tồn đọng vốn'],
-        ];
-        $m = $map[$v] ?? ['neutral', $v];
-        return '<span class="pill ' . $m[0] . '">' . esc_html($m[1]) . '</span>';
+        $m = Formatter::velocityBadge($v);
+        return '<span class="pill ' . esc_attr($m[0]) . '">' . esc_html($m[1]) . '</span>';
     }
 
     private function log_type_label(string $t): string
     {
-        $map = ['stock_update'=>'Tồn kho','price_update'=>'Giá bán','product_sync'=>'Sản phẩm','category_sync'=>'Danh mục/Thương hiệu','webhook_order'=>'Đơn hàng','manual_batch'=>'Quét Batch'];
-        return $map[$t] ?? $t;
+        return Formatter::logTypeLabel($t);
     }
 
     private function vnd($n): string
     {
-        if ($n === null || $n === '') return '—';
-        return number_format_i18n((float)$n, 0) . ' ₫';
+        if (function_exists('number_format_i18n') && $n !== null && $n !== '') {
+            return number_format_i18n((float) $n, 0) . ' ₫';
+        }
+        return Formatter::vnd($n);
     }
 
     private function vnd_compact($n): string
     {
-        $n = (float)$n;
-        if ($n >= 1000000000) return number_format_i18n($n / 1000000000, 2) . ' tỷ ₫';
-        if ($n >= 1000000) return number_format_i18n($n / 1000000, 1) . ' tr ₫';
-        if ($n >= 1000) return number_format_i18n($n / 1000, 0) . ' k ₫';
-        return $this->vnd($n);
+        // Prefer WP i18n formatting when available, but keep compact logic consistent.
+        $val = (float) $n;
+        $abs = abs($val);
+        if (function_exists('number_format_i18n')) {
+            if ($abs >= 1000000000) return number_format_i18n($val / 1000000000, 2) . ' tỷ ₫';
+            if ($abs >= 1000000) return number_format_i18n($val / 1000000, 1) . ' tr ₫';
+            if ($abs >= 1000) return number_format_i18n($val / 1000, 0) . ' k ₫';
+            return $this->vnd($val);
+        }
+        return Formatter::vndCompact($val);
     }
 
     private function field_text(string $name, string $label, string $value, string $type = 'text', bool $mono = true, string $extra = ''): void

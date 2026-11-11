@@ -2,14 +2,28 @@
 
 namespace Puleeno\NhanhVn\Syncer;
 
-use Puleeno\NhanhVn\Syncer\Admin\Menu;
 use Puleeno\NhanhVn\Syncer\Admin\Assets;
+use Puleeno\NhanhVn\Syncer\Admin\Menu;
+use Puleeno\NhanhVn\Syncer\Admin\Pages\Renderer;
 use Puleeno\NhanhVn\Syncer\Admin\Settings;
+use Puleeno\NhanhVn\Syncer\Contracts\SettingsRepositoryInterface;
+use Puleeno\NhanhVn\Syncer\Contracts\SyncStatusResolverInterface;
 use Puleeno\NhanhVn\Syncer\Database\Schema;
+use Puleeno\NhanhVn\Syncer\Repository\SettingsRepository;
+use Puleeno\NhanhVn\Syncer\Service\SettingsService;
+use Puleeno\NhanhVn\Syncer\Service\SyncStatusResolver;
+use Puleeno\NhanhVn\Syncer\Service\TermTaxonomyResolver;
 
 class Plugin
 {
-    private static ?Plugin $instance = null;
+    /** @var Plugin|null */
+    private static $instance = null;
+
+    /** @var array<string,mixed> */
+    private $services = [];
+
+    /** @var bool */
+    private $booted = false;
 
     public static function instance(): Plugin
     {
@@ -19,26 +33,107 @@ class Plugin
         return self::$instance;
     }
 
+    /**
+     * Bootstrap plugin runtime (hooks). Safe to call once.
+     */
     public function boot(): void
     {
+        if ($this->booted) {
+            return;
+        }
+        $this->booted = true;
+
         // Keep DB schema in sync when plugin version/db version changes.
         add_action('admin_init', [Schema::class, 'maybe_upgrade']);
 
         if (!self::is_woocommerce_active()) {
             add_action('admin_notices', [$this, 'notice_woocommerce_required']);
+            // Still allow settings page registration in future if desired; for now limit admin UI.
             return;
         }
 
         if (is_admin()) {
-            (new Menu())->register();
-            (new Assets())->register();
-            (new Settings())->register();
+            $this->menu()->register();
+            $this->assets()->register();
+            $this->settingsController()->register();
         }
+    }
+
+    /**
+     * Simple service locator with lazy singletons for core services.
+     * @param string $id
+     * @param callable $factory
+     * @return mixed
+     */
+    public function make(string $id, callable $factory)
+    {
+        if (!array_key_exists($id, $this->services)) {
+            $this->services[$id] = $factory($this);
+        }
+        return $this->services[$id];
+    }
+
+    public function settingsRepository(): SettingsRepositoryInterface
+    {
+        return $this->make('settings_repository', function () {
+            return new SettingsRepository();
+        });
+    }
+
+    public function settingsService(): SettingsService
+    {
+        return $this->make('settings_service', function (Plugin $plugin) {
+            return new SettingsService($plugin->settingsRepository());
+        });
+    }
+
+    public function syncStatusResolver(): SyncStatusResolverInterface
+    {
+        return $this->make('sync_status_resolver', function () {
+            return new SyncStatusResolver();
+        });
+    }
+
+    public function termTaxonomyResolver(): TermTaxonomyResolver
+    {
+        return $this->make('term_taxonomy_resolver', function (Plugin $plugin) {
+            $settings = $plugin->settingsService()->all();
+            $brand = isset($settings['brand_taxonomy']) ? (string) $settings['brand_taxonomy'] : 'product_brand';
+            return new TermTaxonomyResolver($brand);
+        });
+    }
+
+    public function renderer(): Renderer
+    {
+        return $this->make('renderer', function (Plugin $plugin) {
+            return new Renderer($plugin->syncStatusResolver(), $plugin->termTaxonomyResolver());
+        });
+    }
+
+    public function menu(): Menu
+    {
+        return $this->make('menu', function (Plugin $plugin) {
+            return new Menu($plugin->renderer());
+        });
+    }
+
+    public function assets(): Assets
+    {
+        return $this->make('assets', function () {
+            return new Assets();
+        });
+    }
+
+    public function settingsController(): Settings
+    {
+        return $this->make('settings_controller', function (Plugin $plugin) {
+            return new Settings($plugin->settingsService());
+        });
     }
 
     public function notice_woocommerce_required(): void
     {
-        if (!current_user_can('activate_plugins')) {
+        if (!function_exists('current_user_can') || !current_user_can('activate_plugins')) {
             return;
         }
         echo '<div class="notice notice-warning"><p>';
@@ -53,33 +148,9 @@ class Plugin
 
     public static function activate(): void
     {
-        $defaults = [
-            'app_id' => '',
-            'secret_key' => '',
-            'access_token' => '',
-            'business_id' => '',
-            'business_name' => '',
-            'webhook_url' => home_url('/wp-json/nhanh-syncer/v1/webhook'),
-            'webhook_secret' => wp_generate_password(24, false),
-            'webhook_active' => 1,
-            'auto_sync_enabled' => 1,
-            'sync_interval_minutes' => 15,
-            'safety_stock_buffer' => 2,
-            'auto_price_update' => 1,
-            'auto_stock_update' => 1,
-            'auto_create_missing_web_product' => 0,
-            'brand_taxonomy' => 'product_brand',
-            'is_connected' => 0,
-            'ping_latency_ms' => 0,
-            'last_heartbeat' => '',
-        ];
-        $existing = get_option('nhanh_syncer_settings', []);
-        if (!is_array($existing)) {
-            $existing = [];
-        }
-        update_option('nhanh_syncer_settings', array_merge($defaults, $existing));
-
-        // Install DB schema (safe if called multiple times via dbDelta).
+        // Ensure settings defaults and schema exist.
+        $plugin = self::instance();
+        $plugin->settingsService()->ensureDefaults();
         Schema::install();
     }
 
@@ -88,14 +159,19 @@ class Plugin
         // Keep settings/data for safety.
     }
 
+    /**
+     * @return array<string,mixed>
+     */
     public static function get_settings(): array
     {
-        $settings = get_option('nhanh_syncer_settings', []);
-        return is_array($settings) ? $settings : [];
+        return self::instance()->settingsService()->all();
     }
 
+    /**
+     * @param array<string,mixed> $settings
+     */
     public static function update_settings(array $settings): void
     {
-        update_option('nhanh_syncer_settings', $settings);
+        self::instance()->settingsService()->save($settings);
     }
 }

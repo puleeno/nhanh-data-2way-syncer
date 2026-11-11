@@ -2,9 +2,19 @@
 
 namespace Puleeno\NhanhVn\Syncer\Admin;
 
+use Puleeno\NhanhVn\Syncer\Admin\Pages\Renderer;
+
 class Menu
 {
     public const SLUG = 'nhanh-syncer';
+
+    /** @var Renderer */
+    private $renderer;
+
+    public function __construct(Renderer $renderer)
+    {
+        $this->renderer = $renderer;
+    }
 
     public function register(): void
     {
@@ -36,6 +46,9 @@ class Menu
         }
     }
 
+    /**
+     * Central menu definition; also used by renderer for navigation.
+     */
     public function submenus(): array
     {
         return [
@@ -75,7 +88,6 @@ class Menu
     public function render_page(): void
     {
         $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : self::SLUG;
-        $pages = new Pages\Renderer();
-        $pages->render($page, $this->submenus());
+        $this->renderer->render($page, $this->submenus());
     }
 }
