@@ -50,8 +50,8 @@ class Menu
                 'group' => 'catalog',
             ],
             'nhanh-syncer-categories' => [
-                'title' => __('Đồng Bộ & Cấu Trúc Danh Mục Hàng', 'nhanh-data-2way-syncer'),
-                'menu_title' => __('Đồng bộ Danh mục', 'nhanh-data-2way-syncer'),
+                'title' => __('Đồng Bộ Danh Mục & Thương Hiệu (product_cat / product_brand)', 'nhanh-data-2way-syncer'),
+                'menu_title' => __('Danh mục & Thương hiệu', 'nhanh-data-2way-syncer'),
                 'group' => 'catalog',
             ],
             'nhanh-syncer-logs' => [

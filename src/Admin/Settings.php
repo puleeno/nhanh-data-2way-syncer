@@ -20,6 +20,10 @@ class Settings
         check_admin_referer('nhanh_syncer_save_settings');
 
         $current = Plugin::get_settings();
+        $brand_tax = isset($_POST['brand_taxonomy']) ? sanitize_key(wp_unslash($_POST['brand_taxonomy'])) : 'product_brand';
+        if ($brand_tax === '') {
+            $brand_tax = 'product_brand';
+        }
         $data = [
             'app_id' => isset($_POST['app_id']) ? sanitize_text_field(wp_unslash($_POST['app_id'])) : '',
             'secret_key' => isset($_POST['secret_key']) ? sanitize_text_field(wp_unslash($_POST['secret_key'])) : '',
@@ -35,6 +39,7 @@ class Settings
             'auto_price_update' => isset($_POST['auto_price_update']) ? 1 : 0,
             'auto_stock_update' => isset($_POST['auto_stock_update']) ? 1 : 0,
             'auto_create_missing_web_product' => isset($_POST['auto_create_missing_web_product']) ? 1 : 0,
+            'brand_taxonomy' => $brand_tax,
         ];
 
         $updated = array_merge($current, $data);

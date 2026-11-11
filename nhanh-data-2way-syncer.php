@@ -10,6 +10,8 @@
  * Domain Path: /languages
  * Requires at least: 6.0
  * Requires PHP: 7.4
+ * WC requires at least: 7.0
+ * WC tested up to: 9.0
  */
 
 if (!defined('ABSPATH')) {
@@ -17,6 +19,7 @@ if (!defined('ABSPATH')) {
 }
 
 define('NHANH_SYNCER_VERSION', '0.1.0');
+define('NHANH_SYNCER_DB_VERSION', '1.0.0');
 define('NHANH_SYNCER_FILE', __FILE__);
 define('NHANH_SYNCER_PATH', plugin_dir_path(__FILE__));
 define('NHANH_SYNCER_URL', plugin_dir_url(__FILE__));
