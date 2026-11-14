@@ -45,9 +45,11 @@ với recurrence theo `sync_interval_minutes` (mặc định 15 phút).
 
 WP-Cron chỉ chạy khi có request, nên cần một OS-level cron bắn vào `wp-cron.php`.
 
-### macOS — launchd (khuyến nghị)
+### macOS — launchd + PHP/WP-CLI (khuyến nghị)
 
-`~/Library/LaunchAgents/com.nghesachxua.nhanh-syncer-cron.plist`:
+Dùng **WP-CLI** để cron chạy trong process CLI, **không phụ thuộc web server**.
+
+`~/Library/LaunchAgents/com.nghesachxua.nhan-syncer-cron.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -56,27 +58,39 @@ WP-Cron chỉ chạy khi có request, nên cần một OS-level cron bắn vào 
 <dict>
     <key>Label</key>
     <string>com.nghesachxua.nhanh-syncer-cron</string>
+
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/curl</string>
-        <string>--silent</string>
-        <string>--show-error</string>
-        <string>--fail</string>
-        <string>--insecure</string>
-        <string>--max-time</string>
-        <string>120</string>
-        <string>https://nghesachxua.localhost/wp-cron.php</string>
+        <string>/opt/homebrew/bin/php</string>
+        <string>/usr/local/bin/wp</string>
+        <string>cron</string>
+        <string>event</string>
+        <string>run</string>
+        <string>--due-now</string>
+        <string>--path=/Users/puleeno/Projects/nghesachxua.com</string>
     </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
     <key>StartInterval</key>
     <integer>300</integer>
+
     <key>RunAtLoad</key>
     <true/>
+
     <key>StandardOutPath</key>
     <string>/tmp/nhanh-syncer-cron.out.log</string>
+
     <key>StandardErrorPath</key>
     <string>/tmp/nhanh-syncer-cron.err.log</string>
+
     <key>ProcessType</key>
     <string>Background</string>
+
     <key>LowPriorityIO</key>
     <true/>
 </dict>
@@ -88,23 +102,35 @@ Cài và bật:
 ```bash
 UID_=$(id -u)
 plutil -lint ~/Library/LaunchAgents/com.nghesachxua.nhanh-syncer-cron.plist
-launchctl bootout  gui/$UID_/com.nghesachxua.nhanh-syncer-cron 2>/dev/null
-launchctl bootstrap gui/$UID_ ~/Library/LaunchAgents/com.nghesachxua.nhanh-syncer-cron.plist
-launchctl enable   gui/$UID_/com.nghesachxua.nhanh-syncer-cron
+launchctl bootout   gui/$UID_/com.nghesachxua.nhanh-syncer-cron 2>/dev/null
+launchctl bootstrap gui/$UID_  ~/Library/LaunchAgents/com.nghesachxua.nhanh-syncer-cron.plist
+launchctl enable    gui/$UID_/com.nghesachxua.nhanh-syncer-cron
 
-# kiểm tra
 launchctl print gui/$UID_/com.nghesachxua.nhanh-syncer-cron | grep -E "state|runs|last exit"
 ```
-
-`StartInterval = 300` (5 phút): cron bắn mỗi 5 phút, còn tần suất import thật
-do `sync_interval_minutes` quyết định (15 phút) — WP-Cron chỉ chạy event đến hạn.
 
 Gỡ bỏ:
 
 ```bash
-launchctl bootout gui/$(id -u)/com.nghesachxua.nhanh-syncer-cron
+launchctl bootout gui/$(id -u)/com.nghesachxua.nhan-syncer-cron
 rm ~/Library/LaunchAgents/com.nghesachxua.nhanh-syncer-cron.plist
 ```
+
+**Vì sao không dùng `curl`?** Cả ba cách đều chạy được, nhưng khác nhau ở chỗ *ai* thực thi job (đo thực tế trên máy này):
+
+| Cách | Job chạy ở đâu | Cần web server? |
+| --- | --- | --- |
+| `curl https://<domain>/wp-cron.php` | worker của web server | Có |
+| `php wp-cron.php` | worker của web server (WP tự spawn HTTP self-request; đo được `php=litespeed`) | Có |
+| `wp cron event run --due-now` | **process CLI** (`php=cli`) | Không |
+
+`curl` là cách phổ biến nhất trên shared hosting, nhưng ở môi trường local
+(`.localhost`, self-signed TLS, OLS) thì phụ thuộc web server + chứng chỉ + hosts.
+`wp cron event run --due-now` là cách duy nhất không cần web server và có
+`--due-now` để chạy đúng các event đã đến hạn.
+
+Lưu ý: `php` phải là **PHP CLI** (`/opt/homebrew/bin/php`), không phải `lsphp`.
+Nếu `wp` báo không tìm thấy PHP, đặt `EnvironmentVariables.PATH` như trên.
 
 ### macOS — crontab (thay thế)
 
@@ -113,7 +139,11 @@ crontab -e
 ```
 
 ```cron
+# HTTP (cần web server)
 */5 * * * * /usr/bin/curl -sk --max-time 120 https://nghesachxua.localhost/wp-cron.php >/dev/null 2>&1
+
+# PHP/WP-CLI (không cần web server) — khuyến nghị
+*/5 * * * * /opt/homebrew/bin/php /usr/local/bin/wp cron event run --due-now --path=/Users/puleeno/Projects/nghesachxua.com >/dev/null 2>&1
 ```
 
 ### Linux — crontab
@@ -124,6 +154,12 @@ crontab -e
 
 ```cron
 */5 * * * * /usr/bin/curl -sk --max-time 120 https://<domain>/wp-cron.php >/dev/null 2>&1
+```
+
+Hoặc dùng PHP/WP-CLI (không cần web server):
+
+```cron
+*/5 * * * * /usr/local/bin/wp cron event run --due-now --path=/var/www/site >/dev/null 2>&1
 ```
 
 ### Linux — systemd timer
@@ -137,7 +173,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/curl -sk --max-time 120 https://<domain>/wp-cron.php
+ExecStart=/usr/local/bin/wp cron event run --due-now --path=/var/www/site
 ```
 
 `/etc/systemd/system/nhanh-syncer.timer`:
