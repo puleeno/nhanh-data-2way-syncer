@@ -7,11 +7,13 @@ use Puleeno\NhanhVn\Syncer\Database\JobRepository;
 /**
  * WP Cron glue for Nhanh Data 2-Way Syncer imports.
  *
- * Registers the recurring import hook (`nhanh_syncer_run_import`) whenever the
- * plugin is activated or the sync interval is saved, and clears it on
- * deactivation or when auto-sync is turned off. A WP-cron-driven job means no
- * long-running background worker is required — wp-cron.php picks the event up
- * on the next scheduled tick.
+ * Mirrors how WooCommerce schedules its own recurring jobs:
+ *   - register a custom recurrence interval (`nhanh_syncer_15min`, ...)
+ *   - `wp_schedule_event()` with that interval on plugin activation / settings save
+ *   - `wp_clear_scheduled_hook()` on deactivation or when auto sync is disabled
+ *
+ * A WP-cron-driven job means no long-running background worker is required —
+ * wp-cron.php picks the event up on the next scheduled tick.
  */
 class SyncCronService
 {
@@ -128,8 +130,8 @@ class SyncCronService
         }
         $timestamp = time();
         wp_clear_scheduled_hook(self::HOOK);
-        $args = ['job_type' => 'import'];
-        wp_schedule_event($timestamp + ($intervalMinutes * 60), 'nhanh_syncer_' . $intervalMinutes, self::HOOK, $args);
+        $recurrence = $this->recurrenceIdentifier($intervalMinutes);
+        wp_schedule_event($timestamp, $recurrence, self::HOOK);
     }
 
     private function clearCron(): void
@@ -140,12 +142,34 @@ class SyncCronService
     }
 
     /**
+     * Map a minutes interval to a WP cron recurrence identifier.
+     * Registered dynamically so WP cron knows the interval.
+     */
+    public static function recurrenceIdentifier(int $intervalMinutes): string
+    {
+        return 'nhanh_syncer_' . $intervalMinutes . 'min';
+    }
+
+    /**
+     * Register custom recurrence intervals for WP cron (like WooCommerce does).
+     * Called from Plugin::boot() via `cron_schedules` filter.
+     */
+    public static function registerRecurrences(array $schedules): array
+    {
+        $schedules['nhanh_syncer_5min'] = ['interval' => 5 * 60, 'display' => 'Nhanh Syncer 5 Minutes'];
+        $schedules['nhanh_syncer_15min'] = ['interval' => 15 * 60, 'display' => 'Nhanh Syncer 15 Minutes'];
+        $schedules['nhanh_syncer_30min'] = ['interval' => 30 * 60, 'display' => 'Nhanh Syncer 30 Minutes'];
+        $schedules['nhanh_syncer_60min'] = ['interval' => 60 * 60, 'display' => 'Nhanh Syncer 60 Minutes'];
+        return $schedules;
+    }
+
+    /**
      * @return array<string,mixed>
      */
     private function settings(): array
     {
-        if (class_exists(\Puleeno\NhanhVn\Syncer\Plugin::class)) {
-            $s = \Puleeno\NhanhVn\Syncer\Plugin::get_settings();
+        if (class_exists(\Puleeno\NhanhVn\Syncer.Plugin::class)) {
+            $s = \Puleeno\NhanhVn\Syncer.Plugin::get_settings();
             if (is_array($s)) {
                 return $s;
             }

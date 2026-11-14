@@ -32,6 +32,9 @@ class Settings
         $sanitized = $this->settingsService->sanitize($_POST);
         $this->settingsService->save($sanitized);
 
+        // Notify other parts of the plugin (e.g. cron scheduler) that settings changed.
+        do_action('nhanh_syncer_settings_saved', $sanitized);
+
         $redirect = add_query_arg(['page' => 'nhanh-syncer-settings', 'nhanh_saved' => '1'], admin_url('admin.php'));
         wp_safe_redirect($redirect);
         exit;

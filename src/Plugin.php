@@ -8,9 +8,11 @@ use Puleeno\NhanhVn\Syncer\Admin\Pages\Renderer;
 use Puleeno\NhanhVn\Syncer\Admin\Settings;
 use Puleeno\NhanhVn\Syncer\Contracts\SettingsRepositoryInterface;
 use Puleeno\NhanhVn\Syncer\Contracts\SyncStatusResolverInterface;
+use Puleeno\NhanhVn\Syncer\Database\JobRepository;
 use Puleeno\NhanhVn\Syncer\Database\Schema;
 use Puleeno\NhanhVn\Syncer\Repository\SettingsRepository;
 use Puleeno\NhanhVn\Syncer\Service\SettingsService;
+use Puleeno\NhanhVn\Syncer\Service\SyncCronService;
 use Puleeno\NhanhVn\Syncer\Service\SyncStatusResolver;
 use Puleeno\NhanhVn\Syncer\Service\TermTaxonomyResolver;
 
@@ -46,6 +48,15 @@ class Plugin
         // Keep DB schema in sync when plugin version/db version changes.
         add_action('admin_init', [Schema::class, 'maybe_upgrade']);
 
+        // Register custom recurrence intervals for WP cron (like WooCommerce does).
+        add_filter('cron_schedules', [SyncCronService::class, 'registerRecurrences']);
+
+        // Register the WP cron hook that runs the Nhanh -> WooCommerce import.
+        add_action(SyncCronService::HOOK, [$this, 'run_import_job']);
+        add_action(SyncCronService::HOOK . '_once', [$this, 'run_import_job']);
+        // Reschedule when settings change (auto sync / interval).
+        add_action('nhanh_syncer_settings_saved', [$this, 'reschedule_cron'], 10, 1);
+
         if (!self::is_woocommerce_active()) {
             add_action('admin_notices', [$this, 'notice_woocommerce_required']);
             // Still allow settings page registration in future if desired; for now limit admin UI.
@@ -57,6 +68,27 @@ class Plugin
             $this->assets()->register();
             $this->settingsController()->register();
         }
+    }
+
+    /**
+     * WP cron callback — runs the Nhanh -> WooCommerce import job.
+     */
+    public function run_import_job(): void
+    {
+        $settings = $this->settingsService()->all();
+        $cron = new SyncCronService(new \Puleeno\NhanhVn\Syncer\Database\JobRepository());
+        $cron->dispatchNow($settings);
+    }
+
+    /**
+     * Reschedule the cron job when settings change.
+     *
+     * @param array<string,mixed> $settings
+     */
+    public function reschedule_cron(array $settings): void
+    {
+        $cron = new SyncCronService(new \Puleeno\NhanhVn\Syncer\Database\JobRepository());
+        $cron->onSettingsSave($settings);
     }
 
     /**
@@ -152,11 +184,17 @@ class Plugin
         $plugin = self::instance();
         $plugin->settingsService()->ensureDefaults();
         Schema::install();
+
+        // Schedule the import cron job if auto sync is enabled.
+        $cron = new SyncCronService(new \Puleeno\NhanhVn\Syncer\Database\JobRepository());
+        $cron->activate();
     }
 
     public static function deactivate(): void
     {
-        // Keep settings/data for safety.
+        // Clear the scheduled cron job.
+        $cron = new SyncCronService(new \Puleeno\NhanhVn\Syncer\Database\JobRepository());
+        $cron->deactivate();
     }
 
     /**
