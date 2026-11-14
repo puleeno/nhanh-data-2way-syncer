@@ -4,234 +4,16 @@
  * PHPUnit bootstrap for Nhanh Data 2-Way Syncer.
  *
  * Stubs the WordPress + WooCommerce functions the plugin depends on so unit
- * tests can run without a full WP install. Each stub is backed by a simple
- * in-memory store so tests can assert on state.
+ * tests can run without a full WP install. State is kept in $GLOBALS so tests
+ * can seed and assert on it.
  */
-
-// ---------------------------------------------------------------------------
-// WordPress function stubs
-// ---------------------------------------------------------------------------
-
-if (!function_exists('add_action')) {
-    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) { /* no-op */ }
-}
-if (!function_exists('add_filter')) {
-    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) { /* no-op */ }
-}
-if (!function_exists('do_action')) {
-    function do_action($hook, ...$args) { /* no-op */ }
-}
-if (!function_exists('apply_filters')) {
-    function apply_filters($hook, $value, ...$args) { return $value; }
-}
-if (!function_exists('add_menu_page')) {
-    function add_menu_page(...$args) { /* no-op */ }
-}
-if (!function_exists('add_submenu_page')) {
-    function add_submenu_page(...$args) { /* no-op */ }
-}
-if (!function_exists('is_admin')) {
-    function is_admin() { return false; }
-}
-if (!function_exists('current_user_can')) {
-    function current_user_can($capability) { return true; }
-}
-if (!function_exists('admin_url')) {
-    function admin_url($path = '') { return 'http://example.com/wp-admin/' . ltrim($path, '/'); }
-}
-if (!function_exists('home_url')) {
-    function home_url($path = '') { return 'http://example.com/' . ltrim($path, '/'); }
-}
-if (!function_exists('wp_safe_redirect')) {
-    function wp_safe_redirect($location, $status = 302) { /* no-op */ }
-}
-if (!function_exists('wp_die')) {
-    function wp_die($message = '') { throw new Exception($message); }
-}
-if (!function_exists('check_admin_referer')) {
-    function check_admin_referer($action, $query_arg = false) { /* no-op */ }
-}
-if (!function_exists('sanitize_text_field')) {
-    function sanitize_text_field($str) { return trim(strip_tags((string)$str)); }
-}
-if (!function_exists('sanitize_key')) {
-    function sanitize_key($str) { return strtolower(preg_replace('/[^a-z0-9_\-]/', '', (string)$str)); }
-}
-if (!function_exists('esc_url_raw')) {
-    function esc_url_raw($url) { return filter_var($url, FILTER_SANITIZE_URL); }
-}
-if (!function_exists('esc_html__')) {
-    function esc_html__($text, $domain = 'default') { return $text; }
-}
-if (!function_exists('esc_html')) {
-    function esc_html($text) { return htmlspecialchars((string)$text, ENT_QUOTES, 'UTF-8'); }
-}
-if (!function_exists('esc_attr')) {
-    function esc_attr($text) { return htmlspecialchars((string)$text, ENT_QUOTES, 'UTF-8'); }
-}
-if (!function_exists('esc_url')) {
-    function esc_url($url) { return filter_var($url, FILTER_SANITIZE_URL); }
-}
-if (!function_exists('wp_unslash')) {
-    function wp_unslash($value) { return is_array($value) ? array_map('wp_unslash', $value) : stripslashes($value); }
-}
-if (!function_exists('wp_json_encode')) {
-    function wp_json_encode($data) { return json_encode($data); }
-}
-if (!function_exists('current_time')) {
-    function current_time($type = 'mysql', $gmt = 0) {
-        if ($type === 'mysql') {
-            return $gmt ? gmdate('Y-m-d H:i:s') : date('Y-m-d H:i:s');
-        }
-        return $type === 'timestamp' ? time() : time();
-    }
-}
-if (!function_exists('get_option')) {
-    function get_option($option, $default = false) { return $GLOBALS['__wp_options'][$option] ?? $default; }
-}
-if (!function_exists('update_option')) {
-    function update_option($option, $value) { $GLOBALS['__wp_options'][$option] = $value; return true; }
-}
-if (!function_exists('delete_option')) {
-    function delete_option($option) { unset($GLOBALS['__wp_options'][$option]); return true; }
-}
-if (!function_exists('add_query_arg')) {
-    function add_query_arg($args, $url) {
-        if (is_array($args)) {
-            $query = http_build_query($args);
-        } else {
-            $query = $args . '=' . rawurlencode($args);
-        }
-        return $url . (strpos($url, '?') === false ? '?' : '&') . $query;
-    }
-}
-if (!function_exists('wp_generate_password')) {
-    function wp_generate_password($length = 12, $special_chars = true, $extra_special_chars = false) {
-        return substr(bin2hex(random_bytes($length)), 0, $length);
-    }
-}
-if (!function_exists('set_transient')) {
-    function set_transient($key, $value, $expiration = 0) { $GLOBALS['__wp_transients'][$key] = $value; return true; }
-}
-if (!function_exists('get_transient')) {
-    function get_transient($key) { return $GLOBALS['__wp_transients'][$key] ?? false; }
-}
-if (!function_exists('delete_transient')) {
-    function delete_transient($key) { unset($GLOBALS['__wp_transients'][$key]); return true; }
-}
-if (!function_exists('wp_schedule_event')) {
-    function wp_schedule_event($timestamp, $recurrence, $hook, $args = []) { $GLOBALS['__wp_cron_events'][$hook] = ['timestamp' => $timestamp, 'recurrence' => $recurrence, 'args' => $args]; return true; }
-}
-if (!function_exists('wp_clear_scheduled_hook')) {
-    function wp_clear_scheduled_hook($hook, $args = []) { unset($GLOBALS['__wp_cron_events'][$hook]); return true; }
-}
-if (!function_exists('wp_schedule_single_event')) {
-    function wp_schedule_single_event($timestamp, $hook, $args = []) { $GLOBALS['__wp_cron_events'][$hook . '_once'] = ['timestamp' => $timestamp, 'hook' => $hook, 'args' => $args]; return true; }
-}
-if (!function_exists('wp_next_scheduled')) {
-    function wp_next_scheduled($hook, $args = []) { return $GLOBALS['__wp_cron_events'][$hook]['timestamp'] ?? false; }
-}
-if (!function_exists('wp_get_scheduled_hook_events')) {
-    function wp_get_scheduled_hook_events($hook) { return isset($GLOBALS['__wp_cron_events'][$hook]) ? [$GLOBALS['__wp_cron_events'][$hook]] : []; }
-}
-if (!function_exists('number_format_i18n')) {
-    function number_format_i18n($number, $decimals = 0) { return number_format((float)$number, $decimals); }
-}
-if (!function_exists('wpautop')) {
-    function wpautop($text) { return '<p>' . $text . '</p>'; }
-}
-if (!function_exists('wp_filter_post_html')) {
-    function wp_filter_post_html($html) { return $html; }
-}
-if (!function_exists('sanitize_title')) {
-    function sanitize_title($title) { return strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '-', $title), '-')); }
-}
-
-// ---------------------------------------------------------------------------
-// WooCommerce stubs
-// ---------------------------------------------------------------------------
-
-if (!class_exists('WC_Product')) {
-    class WC_Product {
-        public $id;
-        private $data = [];
-        public function set_name($name) { $this->data['name'] = $name; return $this; }
-        public function set_sku($sku) { $this->data['sku'] = $sku; return $this; }
-        public function set_price($price) { $this->data['price'] = $price; return $this; }
-        public function set_stock_quantity($qty) { $this->data['stock_qty'] = $qty; return $this; }
-        public function set_stock_status($status) { $this->data['stock_status'] = $status; return $this; }
-        public function set_description($desc) { $this->data['description'] = $desc; return $this; }
-        public function set_status($status) { $this->data['status'] = $status; return $this; }
-        public function set_category_ids($ids) { $this->data['category_ids'] = $ids; return $this; }
-        public function set_images($images) { $this->data['images'] = $images; return $this; }
-        public function save() { $this->id = $GLOBALS['__next_wc_product_id']++; $GLOBALS['__wc_products'][$this->id] = $this; return $this->id; }
-        public function get_data() { return $this->data; }
-    }
-}
-if (!class_exists('WC_Product_Variation')) {
-    class WC_Product_Variation extends WC_Product {}
-}
-if (!function_exists('wc_get_product_id_by_sku')) {
-    function wc_get_product_id_by_sku($sku) {
-        foreach ($GLOBALS['__wc_products'] ?? [] as $id => $product) {
-            if ($product->get_data()['sku'] === $sku) return $id;
-        }
-        return 0;
-    }
-}
-if (!function_exists('wc_get_product')) {
-    function wc_get_product($id) { return $GLOBALS['__wc_products'][$id] ?? null; }
-}
-if (!function_exists('wc_create_product')) {
-    function wc_create_product($args) { $p = new WC_Product(); foreach ($args as $k => $v) { if (method_exists($p, 'set_' . $k)) $p->{'set_' . $k}($v); } return $p->save(); }
-}
-
-// ---------------------------------------------------------------------------
-// WordPress term stubs
-// ---------------------------------------------------------------------------
-
-if (!class_exists('WP_Term')) {
-    class WP_Term {
-        public $term_id;
-        public $name;
-        public $taxonomy;
-        public function __construct($id, $name, $taxonomy) { $this->term_id = $id; $this->name = $name; $this->taxonomy = $taxonomy; }
-    }
-}
-if (!function_exists('get_term_by')) {
-    function get_term_by($field, $value, $taxonomy) {
-        foreach ($GLOBALS['__wp_terms'] ?? [] as $term) {
-            if ($term->taxonomy === $taxonomy && $term->{$field} === $value) return $term;
-        }
-        return false;
-    }
-}
-if (!function_exists('wp_insert_term')) {
-    function wp_insert_term($term, $taxonomy, $args = []) {
-        $id = $GLOBALS['__next_term_id']++;
-        $GLOBALS['__wp_terms'][$id] = new WP_Term($id, $term, $taxonomy);
-        return ['term_id' => $id, 'term_taxonomy_id' => $id];
-    }
-}
-
-// ---------------------------------------------------------------------------
-// WP_Error stub
-// ---------------------------------------------------------------------------
-
-if (!class_exists('WP_Error')) {
-    class WP_Error {
-        private $errors = [];
-        public function __construct($code = '', $message = '') { if ($code) $this->errors[$code] = $message; }
-        public function get_error_message() { return implode('; ', $this->errors); }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // WordPress constants
 // ---------------------------------------------------------------------------
 
 if (!defined('ABSPATH')) {
-    define('ABSPATH', '/tmp/');
+    define('ABSPATH', __DIR__ . '/fixtures/');
 }
 if (!defined('ARRAY_A')) {
     define('ARRAY_A', 'ARRAY_A');
@@ -251,15 +33,6 @@ if (!defined('HOUR_IN_SECONDS')) {
 if (!defined('DAY_IN_SECONDS')) {
     define('DAY_IN_SECONDS', 86400);
 }
-if (!defined('WEEK_IN_SECONDS')) {
-    define('WEEK_IN_SECONDS', 604800);
-}
-if (!defined('MONTH_IN_SECONDS')) {
-    define('MONTH_IN_SECONDS', 2592000);
-}
-if (!defined('YEAR_IN_SECONDS')) {
-    define('YEAR_IN_SECONDS', 31536000);
-}
 if (!defined('NHANH_SYNCER_VERSION')) {
     define('NHANH_SYNCER_VERSION', '0.1.0');
 }
@@ -276,82 +49,262 @@ if (!defined('NHANH_SYNCER_URL')) {
     define('NHANH_SYNCER_URL', 'http://example.com/');
 }
 if (!defined('NHANH_SYNCER_BASENAME')) {
-    define('NHANH_SYNCER_BASENAME', 'nhan-data-2way-syncer/nhan-data-2way-syncer.php');
+    define('NHANH_SYNCER_BASENAME', 'nhanh-data-2way-syncer/nhanh-data-2way-syncer.php');
 }
 
 // ---------------------------------------------------------------------------
-// WP function stubs
+// Generic WordPress functions
 // ---------------------------------------------------------------------------
 
-if (!function_exists('is_wp_error')) {
-    function is_wp_error($thing) { return $thing instanceof WP_Error; }
+if (!function_exists('add_action')) {
+    function add_action($hook, $callback, $priority = 10, $accepted_args = 1) {}
 }
-if (!function_exists('wp_slash')) {
-    function wp_slash($value) { return is_array($value) ? array_map('wp_slash', $value) : addslashes($value); }
+if (!function_exists('add_filter')) {
+    function add_filter($hook, $callback, $priority = 10, $accepted_args = 1) {}
 }
-if (!function_exists('wp_parse_args')) {
-    function wp_parse_args($args, $defaults = []) {
-        if (is_object($args)) $args = get_object_vars($args);
-        if (!is_array($args)) $args = wp_parse_str($args, []);
-        return array_merge($defaults, $args);
+if (!function_exists('do_action')) {
+    function do_action($hook, ...$args) {}
+}
+if (!function_exists('apply_filters')) {
+    function apply_filters($hook, $value, ...$args) { return $value; }
+}
+if (!function_exists('add_menu_page')) {
+    function add_menu_page(...$args) {}
+}
+if (!function_exists('add_submenu_page')) {
+    function add_submenu_page(...$args) {}
+}
+if (!function_exists('is_admin')) {
+    function is_admin() { return false; }
+}
+if (!function_exists('current_user_can')) {
+    function current_user_can($capability) { return true; }
+}
+if (!function_exists('admin_url')) {
+    function admin_url($path = '') { return 'http://example.com/wp-admin/' . ltrim($path, '/'); }
+}
+if (!function_exists('home_url')) {
+    function home_url($path = '') { return 'http://example.com/' . ltrim($path, '/'); }
+}
+if (!function_exists('wp_safe_redirect')) {
+    function wp_safe_redirect($location, $status = 302) {}
+}
+if (!function_exists('wp_die')) {
+    function wp_die($message = '') { throw new \RuntimeException((string) $message); }
+}
+if (!function_exists('check_admin_referer')) {
+    function check_admin_referer($action, $query_arg = false) {}
+}
+if (!function_exists('sanitize_text_field')) {
+    function sanitize_text_field($str) { return trim(strip_tags((string) $str)); }
+}
+if (!function_exists('sanitize_key')) {
+    function sanitize_key($str) { return strtolower(preg_replace('/[^a-z0-9_\-]/', '', (string) $str)); }
+}
+if (!function_exists('esc_url_raw')) {
+    function esc_url_raw($url) { return filter_var($url, FILTER_SANITIZE_URL); }
+}
+if (!function_exists('esc_html__')) {
+    function esc_html__($text, $domain = 'default') { return $text; }
+}
+if (!function_exists('esc_html')) {
+    function esc_html($text) { return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8'); }
+}
+if (!function_exists('esc_attr')) {
+    function esc_attr($text) { return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8'); }
+}
+if (!function_exists('esc_url')) {
+    function esc_url($url) { return filter_var($url, FILTER_SANITIZE_URL); }
+}
+if (!function_exists('wp_unslash')) {
+    function wp_unslash($value) { return is_array($value) ? array_map('wp_unslash', $value) : stripslashes((string) $value); }
+}
+if (!function_exists('wp_json_encode')) {
+    function wp_json_encode($data) { return json_encode($data); }
+}
+if (!function_exists('current_time')) {
+    function current_time($type = 'mysql', $gmt = 0) {
+        if ($type === 'mysql' || $type === 'mysql2') {
+            return $gmt ? gmdate('Y-m-d H:i:s') : date('Y-m-d H:i:s');
+        }
+        return time();
     }
 }
-if (!function_exists('wp_parse_str')) {
-    function wp_parse_str($string, &$result) { parse_str($string, $result); }
+if (!function_exists('get_option')) {
+    function get_option($option, $default = false) { return $GLOBALS['__wp_options'][$option] ?? $default; }
 }
-if (!function_exists('get_bloginfo')) {
-    function get_bloginfo($show = '') { return 'Test Blog'; }
+if (!function_exists('update_option')) {
+    function update_option($option, $value) { $GLOBALS['__wp_options'][$option] = $value; return true; }
 }
-if (!function_exists('get_locale')) {
-    function get_locale() { return 'en_US'; }
+if (!function_exists('delete_option')) {
+    function delete_option($option) { unset($GLOBALS['__wp_options'][$option]); return true; }
 }
-if (!function_exists('is_multisite')) {
-    function is_multisite() { return false; }
+if (!function_exists('add_query_arg')) {
+    function add_query_arg($args, $url) {
+        $query = is_array($args) ? http_build_query($args) : ($args . '=' . rawurlencode($args));
+        return $url . (strpos($url, '?') === false ? '?' : '&') . $query;
+    }
+}
+if (!function_exists('wp_generate_password')) {
+    function wp_generate_password($length = 12, $special_chars = true, $extra_special_chars = false) {
+        return substr(bin2hex(random_bytes((int) ceil($length / 2))), 0, $length);
+    }
+}
+if (!function_exists('set_transient')) {
+    function set_transient($key, $value, $expiration = 0) { $GLOBALS['__wp_transients'][$key] = $value; return true; }
+}
+if (!function_exists('get_transient')) {
+    function get_transient($key) { return $GLOBALS['__wp_transients'][$key] ?? false; }
+}
+if (!function_exists('delete_transient')) {
+    function delete_transient($key) { unset($GLOBALS['__wp_transients'][$key]); return true; }
+}
+if (!function_exists('number_format_i18n')) {
+    function number_format_i18n($number, $decimals = 0) { return number_format((float) $number, $decimals); }
+}
+if (!function_exists('wpautop')) {
+    function wpautop($text) { return '<p>' . $text . '</p>'; }
+}
+if (!function_exists('wp_filter_post_html')) {
+    function wp_filter_post_html($html) { return $html; }
+}
+if (!function_exists('sanitize_title')) {
+    function sanitize_title($title) {
+        $title = strtolower(trim((string) $title));
+        $title = preg_replace('/[^a-z0-9]+/', '-', $title);
+        return trim($title, '-');
+    }
+}
+if (!function_exists('is_wp_error')) {
+    function is_wp_error($thing) { return $thing instanceof \WP_Error; }
+}
+if (!function_exists('wp_slash')) {
+    function wp_slash($value) { return is_array($value) ? array_map('wp_slash', $value) : addslashes((string) $value); }
 }
 if (!function_exists('get_current_user_id')) {
     function get_current_user_id() { return 1; }
 }
-if (!function_exists('wp_get_current_user')) {
-    function wp_get_current_user() { return new class { public $ID = 1; public $user_login = 'admin'; }; }
+
+// ---------------------------------------------------------------------------
+// Cron stubs
+// ---------------------------------------------------------------------------
+
+if (!function_exists('wp_schedule_event')) {
+    function wp_schedule_event($timestamp, $recurrence, $hook, $args = []) {
+        $GLOBALS['__wp_cron_events'][$hook] = ['timestamp' => $timestamp, 'recurrence' => $recurrence, 'args' => $args];
+        return true;
+    }
 }
-if (!function_exists('get_user_meta')) {
-    function get_user_meta($user_id, $key, $single = false) { return $single ? '' : []; }
+if (!function_exists('wp_clear_scheduled_hook')) {
+    function wp_clear_scheduled_hook($hook, $args = []) { unset($GLOBALS['__wp_cron_events'][$hook]); return true; }
 }
-if (!function_exists('update_user_meta')) {
-    function update_user_meta($user_id, $key, $value) { return true; }
+if (!function_exists('wp_schedule_single_event')) {
+    function wp_schedule_single_event($timestamp, $hook, $args = []) {
+        $GLOBALS['__wp_cron_events'][$hook . '_once'] = ['timestamp' => $timestamp, 'hook' => $hook, 'args' => $args];
+        return true;
+    }
 }
-if (!function_exists('delete_user_meta')) {
-    function delete_user_meta($user_id, $key) { return true; }
+if (!function_exists('wp_next_scheduled')) {
+    function wp_next_scheduled($hook, $args = []) { return $GLOBALS['__wp_cron_events'][$hook]['timestamp'] ?? false; }
 }
-if (!function_exists('get_user_by')) {
-    function get_user_by($field, $value) { return null; }
+
+// ---------------------------------------------------------------------------
+// WP_Error stub
+// ---------------------------------------------------------------------------
+
+if (!class_exists('WP_Error')) {
+    class WP_Error
+    {
+        private $errors = [];
+        public function __construct($code = '', $message = '')
+        {
+            if ($code !== '') {
+                $this->errors[$code] = $message;
+            }
+        }
+        public function get_error_message()
+        {
+            return implode('; ', $this->errors);
+        }
+    }
 }
-if (!function_exists('wp_mail')) {
-    function wp_mail($to, $subject, $message, $headers = '', $attachments = []) { return true; }
+
+// ---------------------------------------------------------------------------
+// WooCommerce stubs
+// ---------------------------------------------------------------------------
+
+if (!class_exists('WC_Product')) {
+    class WC_Product
+    {
+        public $id = 0;
+        private $data = [];
+
+        public function set_name($name) { $this->data['name'] = $name; return $this; }
+        public function set_sku($sku) { $this->data['sku'] = $sku; return $this; }
+        public function set_price($price) { $this->data['price'] = $price; return $this; }
+        public function set_stock_quantity($qty) { $this->data['stock_qty'] = $qty; return $this; }
+        public function set_stock_status($status) { $this->data['stock_status'] = $status; return $this; }
+        public function set_description($desc) { $this->data['description'] = $desc; return $this; }
+        public function set_status($status) { $this->data['status'] = $status; return $this; }
+        public function set_category_ids($ids) { $this->data['category_ids'] = $ids; return $this; }
+        public function set_images($images) { $this->data['images'] = $images; return $this; }
+
+        public function save()
+        {
+            if ($this->id <= 0) {
+                $this->id = $GLOBALS['__next_wc_product_id']++;
+            }
+            $GLOBALS['__wc_products'][$this->id] = $this;
+            return $this->id;
+        }
+
+        public function get_data() { return $this->data; }
+        public function get_id() { return $this->id; }
+    }
 }
-if (!function_exists('get_post_meta')) {
-    function get_post_meta($post_id, $key, $single = false) { return $single ? '' : []; }
+
+if (!function_exists('wc_get_product_id_by_sku')) {
+    function wc_get_product_id_by_sku($sku) {
+        foreach ($GLOBALS['__wc_products'] ?? [] as $id => $product) {
+            $data = method_exists($product, 'get_data') ? $product->get_data() : [];
+            if (isset($data['sku']) && $data['sku'] === $sku) {
+                return (int) $id;
+            }
+        }
+        return 0;
+    }
 }
-if (!function_exists('update_post_meta')) {
-    function update_post_meta($post_id, $key, $value) { return true; }
+if (!function_exists('wc_get_product')) {
+    function wc_get_product($id) { return $GLOBALS['__wc_products'][$id] ?? null; }
 }
-if (!function_exists('delete_post_meta')) {
-    function delete_post_meta($post_id, $key) { return true; }
+
+// ---------------------------------------------------------------------------
+// Term stubs
+// ---------------------------------------------------------------------------
+
+if (!class_exists('WP_Term')) {
+    class WP_Term
+    {
+        public $term_id;
+        public $name;
+        public $taxonomy;
+        public function __construct($id, $name, $taxonomy)
+        {
+            $this->term_id = $id;
+            $this->name = $name;
+            $this->taxonomy = $taxonomy;
+        }
+    }
 }
-if (!function_exists('get_the_terms')) {
-    function get_the_terms($post_id, $taxonomy) { return false; }
-}
-if (!function_exists('wp_set_object_terms')) {
-    function wp_set_object_terms($object_id, $terms, $taxonomy) { return []; }
-}
-if (!function_exists('get_term')) {
-    function get_term($term_id, $taxonomy = '') { return new WP_Term($term_id, 'Test Term', $taxonomy); }
-}
-if (!function_exists('get_terms')) {
-    function get_terms($args = []) { return []; }
-}
-if (!function_exists('term_exists')) {
-    function term_exists($term, $taxonomy = '', $parent = null) { return null; }
+if (!function_exists('get_term_by')) {
+    function get_term_by($field, $value, $taxonomy = '') {
+        foreach ($GLOBALS['__wp_terms'] ?? [] as $term) {
+            if ($term->taxonomy === $taxonomy && isset($term->{$field}) && $term->{$field} === $value) {
+                return $term;
+            }
+        }
+        return false;
+    }
 }
 if (!function_exists('wp_insert_term')) {
     function wp_insert_term($term, $taxonomy, $args = []) {
@@ -360,103 +313,156 @@ if (!function_exists('wp_insert_term')) {
         return ['term_id' => $id, 'term_taxonomy_id' => $id];
     }
 }
-if (!function_exists('wp_update_term')) {
-    function wp_update_term($term_id, $taxonomy, $args = []) { return ['term_id' => $term_id, 'term_taxonomy_id' => $term_id]; }
-}
-if (!function_exists('wp_delete_term')) {
-    function wp_delete_term($term_id, $taxonomy) { unset($GLOBALS['__wp_terms'][$term_id]); return true; }
-}
-if (!function_exists('get_term_link')) {
-    function get_term_link($term, $taxonomy = '') { return 'http://example.com/term/' . $term; }
-}
-if (!function_exists('get_term_by')) {
-    function get_term_by($field, $value, $taxonomy = '') {
-        foreach ($GLOBALS['__wp_terms'] ?? [] as $term) {
-            if ($term->taxonomy === $taxonomy && $term->{$field} === $value) return $term;
-        }
-        return false;
-    }
-}
-if (!function_exists('term_exists')) {
-    function term_exists($term, $taxonomy = '', $parent = null) {
-        foreach ($GLOBALS['__wp_terms'] ?? [] as $t) {
-            if ($t->name === $term && $t->taxonomy === $taxonomy) return ['term_id' => $t->term_id];
-        }
-        return null;
-    }
-}
 
 // ---------------------------------------------------------------------------
-// WP Database mock
+// wpdb: small in-memory SQL-ish mock
 // ---------------------------------------------------------------------------
 
 if (!class_exists('wpdb')) {
-    class wpdb {
+    class wpdb
+    {
         public $prefix = 'wp_';
         public $insert_id = 0;
         public $num_rows = 0;
+        /** @var array<string,array<int,array<string,mixed>>> */
         public $tables = [];
 
         public function get_charset_collate() { return ''; }
-        public function prepare($query, ...$args) {
+
+        public function prepare($query, ...$args)
+        {
+            if (count($args) === 1 && is_array($args[0])) {
+                $args = $args[0];
+            }
             foreach ($args as $arg) {
-                if (is_string($arg)) $query = preg_replace('/%s/', "'" . addslashes($arg) . "'", $query, 1);
-                elseif (is_int($arg)) $query = preg_replace('/%d/', (string)$arg, $query, 1);
+                if ($arg === null) {
+                    $query = preg_replace('/%s/', 'NULL', $query, 1);
+                } elseif (is_int($arg) || is_float($arg)) {
+                    $query = preg_replace('/%d/', (string) $arg, $query, 1);
+                } elseif (is_array($arg)) {
+                    $query = preg_replace('/%s/', "'" . addslashes(json_encode($arg)) . "'", $query, 1);
+                } else {
+                    $query = preg_replace('/%s/', "'" . addslashes((string) $arg) . "'", $query, 1);
+                }
             }
             return $query;
         }
-        public function insert($table, $data) {
+
+        private function conditions(string $where): array
+        {
+            $conds = [];
+            foreach (preg_split('/\s+AND\s+/i', $where) as $part) {
+                if (preg_match('/(\w+)\s*=\s*(.+)$/', trim($part), $m)) {
+                    $conds[$m[1]] = trim($m[2], "'\"");
+                }
+            }
+            return $conds;
+        }
+
+        private function matches(array $row, array $conds): bool
+        {
+            foreach ($conds as $key => $value) {
+                if (!array_key_exists($key, $row) || (string) $row[$key] !== (string) $value) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private function select(string $query): array
+        {
+            if (!preg_match('/FROM\s+(\w+)(.*)$/is', $query, $m)) {
+                return [];
+            }
+            $table = $m[1];
+            $rest = $m[2];
+            $rows = array_values($this->tables[$table] ?? []);
+
+            if (preg_match('/WHERE\s+(.*?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/is', $rest, $wm)) {
+                $conds = $this->conditions($wm[1]);
+                $rows = array_values(array_filter($rows, function ($row) use ($conds) {
+                    return $this->matches($row, $conds);
+                }));
+            }
+
+            if (preg_match('/ORDER\s+BY\s+(\w+)(\s+ASC|\s+DESC)?/i', $rest, $om)) {
+                $col = $om[1];
+                $dir = strtoupper(trim($om[2] ?? 'ASC')) === 'DESC' ? -1 : 1;
+                usort($rows, function ($a, $b) use ($col, $dir) {
+                    return strcmp((string) ($a[$col] ?? ''), (string) ($b[$col] ?? '')) * $dir;
+                });
+            }
+
+            if (preg_match('/LIMIT\s+(\d+)/i', $rest, $lm)) {
+                $rows = array_slice($rows, 0, (int) $lm[1]);
+            }
+
+            return $rows;
+        }
+
+        public function insert($table, $data)
+        {
             $this->tables[$table] = $this->tables[$table] ?? [];
             $id = count($this->tables[$table]) + 1;
             $data['id'] = $id;
             $this->tables[$table][$id] = $data;
             $this->insert_id = $id;
-            return true;
+            $this->num_rows = 1;
+            return 1;
         }
-        public function update($table, $data, $where) {
-            foreach ($this->tables[$table] ?? [] as $key => &$row) {
-                $match = true;
-                foreach ($where as $k => $v) {
-                    if (($row[$k] ?? null) != $v) { $match = false; break; }
-                }
-                if ($match) { $row = array_merge($row, $data); $this->tables[$table][$key] = $row; return true; }
-            }
-            return false;
-        }
-        public function get_var($query) {
-            // Match SELECT id FROM table WHERE col = value
-            if (preg_match('/SELECT\s+id\s+FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*(.+)/i', $query, $m)) {
-                $table = $m[1];
-                $col = $m[2];
-                $val = trim($m[3], "'\"");
-                foreach ($this->tables[$table] ?? [] as $row) {
-                    if (($row[$col] ?? null) == $val) return $row['id'] ?? null;
+
+        public function update($table, $data, $where)
+        {
+            $count = 0;
+            foreach ($this->tables[$table] ?? [] as $key => $row) {
+                if ($this->matches($row, $where)) {
+                    $this->tables[$table][$key] = array_merge($row, $data);
+                    $count++;
                 }
             }
-            return null;
+            $this->num_rows = $count;
+            return $count;
         }
-        public function get_row($query, $output = OBJECT) {
-            // Match SELECT * FROM table WHERE col = value
-            if (preg_match('/FROM\s+(\w+)\s+WHERE\s+(\w+)\s*=\s*(.+?)(?:\s+AND\s+|$)/i', $query, $m)) {
-                $table = $m[1];
-                $col = $m[2];
-                $val = trim($m[3], "'\"");
-                foreach ($this->tables[$table] ?? [] as $row) {
-                    if (($row[$col] ?? null) == $val) return (object)$row;
-                }
+
+        public function get_var($query)
+        {
+            $rows = $this->select($query);
+            if (!$rows) {
+                return null;
             }
-            return null;
+            // Honour "SELECT id FROM ..." by returning the id column.
+            if (preg_match('/SELECT\s+id\s+FROM/i', $query) && array_key_exists('id', $rows[0])) {
+                return $rows[0]['id'];
+            }
+            $values = array_values($rows[0]);
+            return $values[0] ?? null;
         }
-        public function get_results($query, $output = OBJECT) {
-            // Match SELECT * FROM table [WHERE ...]
-            if (preg_match('/FROM\s+(\w+)/i', $query, $m)) {
-                $table = $m[1];
-                return array_values($this->tables[$table] ?? []);
+
+        public function get_row($query, $output = OBJECT)
+        {
+            $rows = $this->select($query);
+            if (!$rows) {
+                return null;
             }
-            return [];
+            return $output === ARRAY_A ? $rows[0] : (object) $rows[0];
+        }
+
+        public function get_results($query, $output = OBJECT)
+        {
+            $rows = $this->select($query);
+            $this->num_rows = count($rows);
+            $out = [];
+            foreach ($rows as $row) {
+                $out[] = $output === ARRAY_A ? $row : (object) $row;
+            }
+            return $out;
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
 
 $GLOBALS['wpdb'] = new wpdb();
 $GLOBALS['__wp_options'] = $GLOBALS['__wp_options'] ?? [];

@@ -168,8 +168,8 @@ class SyncCronService
      */
     private function settings(): array
     {
-        if (class_exists(\Puleeno\NhanhVn\Syncer.Plugin::class)) {
-            $s = \Puleeno\NhanhVn\Syncer.Plugin::get_settings();
+        if (class_exists('Puleeno\\NhanhVn\\Syncer\\Plugin')) {
+            $s = \Puleeno\NhanhVn\Syncer\Plugin::get_settings();
             if (is_array($s)) {
                 return $s;
             }
