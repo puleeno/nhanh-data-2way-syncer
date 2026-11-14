@@ -107,6 +107,21 @@ if (!function_exists('esc_url_raw')) {
 if (!function_exists('esc_html__')) {
     function esc_html__($text, $domain = 'default') { return $text; }
 }
+if (!function_exists('__')) {
+    function __($text, $domain = 'default') { return $text; }
+}
+if (!function_exists('_e')) {
+    function _e($text, $domain = 'default') { echo $text; }
+}
+if (!function_exists('esc_html_e')) {
+    function esc_html_e($text, $domain = 'default') { echo $text; }
+}
+if (!function_exists('_x')) {
+    function _x($text, $context, $domain = 'default') { return $text; }
+}
+if (!function_exists('_n')) {
+    function _n($single, $plural, $number, $domain = 'default') { return $number === 1 ? $single : $plural; }
+}
 if (!function_exists('esc_html')) {
     function esc_html($text) { return htmlspecialchars((string) $text, ENT_QUOTES, 'UTF-8'); }
 }
@@ -232,6 +247,13 @@ if (!class_exists('WP_Error')) {
 // ---------------------------------------------------------------------------
 // WooCommerce stubs
 // ---------------------------------------------------------------------------
+
+if (!class_exists('WooCommerce')) {
+    class WooCommerce
+    {
+        public static $version = '9.0.0';
+    }
+}
 
 if (!class_exists('WC_Product')) {
     class WC_Product

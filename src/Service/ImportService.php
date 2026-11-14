@@ -31,12 +31,30 @@ class ImportService
     /** @var WooBridge */
     private $woo;
 
-    public function __construct(JobRepository $jobs, ProductMapRepository $productMaps, TermMapRepository $termMaps, WooBridge $woo)
-    {
+    /** @var object|null */
+    private $client;
+
+    /** @var array<string,mixed>|null */
+    private $settings;
+
+    /**
+     * @param object|null $client   Injectable Nhanh client (tests); built from settings when null.
+     * @param array<string,mixed>|null $settings Injectable settings (tests); read from Plugin when null.
+     */
+    public function __construct(
+        JobRepository $jobs,
+        ProductMapRepository $productMaps,
+        TermMapRepository $termMaps,
+        WooBridge $woo,
+        $client = null,
+        ?array $settings = null
+    ) {
         $this->jobs = $jobs;
         $this->productMaps = $productMaps;
         $this->termMaps = $termMaps;
         $this->woo = $woo;
+        $this->client = $client;
+        $this->settings = $settings;
     }
 
     /**
@@ -60,7 +78,7 @@ class ImportService
         $errorDetail = '';
 
         try {
-            $client = (new NhanhClientFactory($this->settings()))->make();
+            $client = $this->client();
             if ($client === null) {
                 throw new \RuntimeException('missing_credentials');
             }
@@ -68,31 +86,30 @@ class ImportService
             $categories = $client->products()->getCategories([], ['size' => 100]);
             $brands = $client->products()->getBrands();
 
-            $result = $this->importCategories($client, $categories);
-            $scanned += $result['scanned'];
-            $updated += $result['updated'];
-            if ($result['failed'] > 0) {
+            $categoryResult = $this->importCategories($client, $categories);
+            $scanned += $categoryResult['scanned'];
+            $updated += $categoryResult['updated'];
+            if ($categoryResult['failed'] > 0) {
                 $failures[] = 'categories';
-                $failed += $result['failed'];
+                $failed += $categoryResult['failed'];
             }
 
             if (empty($brands)) {
                 // no brand yet
             } else {
-                $result = $this->importBrands($brands);
-                $scanned += $result['scanned'];
-                $updated += $result['updated'];
-                if ($result['failed'] > 0) {
+                $brandResult = $this->importBrands($brands);
+                $scanned += $brandResult['scanned'];
+                $updated += $brandResult['updated'];
+                if ($brandResult['failed'] > 0) {
                     $failures[] = 'brands';
-                    $failed += $result['failed'];
+                    $failed += $brandResult['failed'];
                 }
             }
 
             $products = $client->products()->search(['paginator' => ['size' => 100, 'sort' => ['id' => 'desc']]]);
             $products = $products instanceof \Illuminate\Support\Collection ? $products->all() : (array) $products;
-            $scanned += count($products);
 
-            $prodResult = $this->importProducts($products);
+            $prodResult = $this->importProducts($products, $categoryResult['map']);
             $scanned += $prodResult['scanned'];
             $updated += $prodResult['updated'];
             $failed += $prodResult['failed'];
@@ -142,7 +159,10 @@ class ImportService
      */
     private function settings(): array
     {
-        if (class_exists(\Puleeno\NhanhVn\Syncer\Plugin::class)) {
+        if (is_array($this->settings)) {
+            return $this->settings;
+        }
+        if (class_exists('Puleeno\\NhanhVn\\Syncer\\Plugin')) {
             $s = \Puleeno\NhanhVn\Syncer\Plugin::get_settings();
             if (is_array($s) && !empty($s)) {
                 return $s;
@@ -152,14 +172,40 @@ class ImportService
     }
 
     /**
+     * Resolve the Nhanh client (injected instance, or built from settings).
+     *
+     * @return object|null
+     */
+    private function client()
+    {
+        if (is_object($this->client)) {
+            return $this->client;
+        }
+        return (new NhanhClientFactory($this->settings()))->make();
+    }
+
+    /**
+     * WooCommerce taxonomy used for Nhanh product categories. Always `product_cat`;
+     * the brand taxonomy is a separate concern handled by importBrands().
+     */
+    private function categoryTaxonomy(): string
+    {
+        return 'product_cat';
+    }
+
+    /**
+     * Import Nhanh product categories into WooCommerce `product_cat`.
+     *
      * @param mixed $client
-     * @return array{scanned:int,updated:int,failed:int}
+     * @param mixed $categories
+     * @return array{scanned:int,updated:int,failed:int,map:array<string,int>} nhanh term id => wc term id
      */
     private function importCategories($client, $categories): array
     {
         $scanned = 0;
         $updated = 0;
         $failed = 0;
+        $map = [];
 
         $list = [];
         if ($categories instanceof \Illuminate\Support\Collection) {
@@ -167,6 +213,8 @@ class ImportService
         } elseif (is_array($categories)) {
             $list = $categories;
         }
+
+        $wcTax = $this->categoryTaxonomy();
 
         foreach ($list as $cat) {
             if (!$cat instanceof \Puleeno\NhanhVn\Entities\Product\ProductCategory) {
@@ -178,8 +226,6 @@ class ImportService
             if ($name === '') {
                 continue;
             }
-            $wcTax = $this->settings()['brand_taxonomy'] ?: 'product_cat';
-            $wcTax = in_array($wcTax, ['product_cat', 'product_brand'], true) ? $wcTax : 'product_cat';
 
             $termId = $this->woo->upsertTerm($wcTax, $name, (string) $cat->getContent());
             if ($termId <= 0) {
@@ -187,7 +233,7 @@ class ImportService
                 continue;
             }
 
-            $termMapId = $this->termMaps->upsert([
+            $this->termMaps->upsert([
                 'nhanh_term_type' => 'category',
                 'nhanh_term_id' => $nhanhId,
                 'nhanh_term_name' => $name,
@@ -196,14 +242,15 @@ class ImportService
                 'wc_term_id' => $termId,
                 'wc_term_name' => $name,
                 'product_count' => 0,
-                'status' => $termId > 0 ? 'synced' : 'unmapped',
+                'status' => 'synced',
                 'auto_create_new' => 0,
             ]);
 
+            $map[$nhanhId] = (int) $termId;
             $updated++;
         }
 
-        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed];
+        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'map' => $map];
     }
 
     /**
@@ -233,7 +280,7 @@ class ImportService
             if ($name === '') {
                 continue;
             }
-            $wcTax = $this->settings()['brand_taxonomy'] ?: 'product_brand';
+            $wcTax = (string) ($this->settings()['brand_taxonomy'] ?? 'product_brand');
             $wcTax = in_array($wcTax, ['product_cat', 'product_brand'], true) ? $wcTax : 'product_brand';
 
             $termId = $this->woo->upsertTerm($wcTax, $name, (string) $brand->getDescription());
@@ -262,10 +309,11 @@ class ImportService
     }
 
     /**
-     * @param array<int,array<string,mixed>> $products
-     * @return array{scanned:int,updated:int,failed:int}
+     * @param array<int,mixed> $products
+     * @param array<string,int> $categoryMap nhanh term id => wc term id
+     * @return array{scanned:int,updated:int,failed:int,skipped:int}
      */
-    private function importProducts(array $products): array
+    private function importProducts(array $products, array $categoryMap = []): array
     {
         $scanned = 0;
         $updated = 0;
@@ -278,38 +326,57 @@ class ImportService
             }
             $scanned++;
 
-            $nhanhId = (string) $p->getIdNhanh();
+            $nhanhId = (string) ($p->getAttribute('id') ?? $p->getAttribute('idNhanh') ?? '');
             $code = (string) ($p->getCode() ?? '');
             if ($nhanhId === '' && $code === '') {
+                $skipped++;
                 continue;
             }
 
             $sku = $code !== '' ? $code : 'NHANH-' . $nhanhId;
-            $price = (float) ($p->getPrice() ?? 0);
-            $stock = (int) $p->getAvailableQuantity();
+            $price = $this->resolvePrice($p);
+            $stock = $this->resolveStock($p);
+
+            $categoryId = (string) ($p->getCategoryId() ?? '');
+            $categoryTermIds = [];
+            if ($categoryId !== '' && isset($categoryMap[$categoryId])) {
+                $categoryTermIds[] = (int) $categoryMap[$categoryId];
+            }
 
             $data = [
                 'sku' => $sku,
                 'name' => (string) $p->getName(),
                 'price' => $price,
                 'stock' => $stock,
-                'status' => $this->settings()['auto_price_update'] ? 'publish' : 'draft',
-                'categories' => [],
+                'status' => $this->resolvePostStatus($p),
+                'categories' => $categoryTermIds,
                 'images' => [],
             ];
 
             $image = $p->getImage();
-            if ($image) {
-                $data['images'][] = (string) $image;
-            }
             $images = $p->getImages();
+            $imageList = [];
             if (is_array($images)) {
+                if (isset($images['avatar']) && is_string($images['avatar']) && $images['avatar'] !== '') {
+                    $imageList[] = $images['avatar'];
+                }
+                if (isset($images['others']) && is_array($images['others'])) {
+                    foreach ($images['others'] as $url) {
+                        if (is_string($url) && $url !== '') {
+                            $imageList[] = $url;
+                        }
+                    }
+                }
                 foreach ($images as $img) {
                     if (is_array($img) && isset($img['src'])) {
-                        $data['images'][] = (string) $img['src'];
+                        $imageList[] = (string) $img['src'];
                     }
                 }
             }
+            if ($image && !in_array((string) $image, $imageList, true)) {
+                array_unshift($imageList, (string) $image);
+            }
+            $data['images'] = $imageList;
 
             $productId = $this->woo->upsertProduct($data);
             if ($productId <= 0) {
@@ -322,7 +389,7 @@ class ImportService
                 'nhanh_code' => $sku,
                 'nhanh_barcode' => '',
                 'nhanh_name' => (string) $p->getName(),
-                'nhanh_category_id' => (string) ($p->getCategoryId() ?? 0),
+                'nhanh_category_id' => $categoryId,
                 'nhanh_category_name' => (string) ($p->getCategoryName() ?? ''),
                 'nhanh_brand_id' => (string) ($p->getBrandId() ?? 0),
                 'nhanh_brand_name' => (string) ($p->getBrandName() ?? ''),
@@ -345,6 +412,65 @@ class ImportService
             }
         }
 
-        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed];
+        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'skipped' => $skipped];
+    }
+
+    /**
+     * Decide the WooCommerce post status for an imported product.
+     *
+     * Active products publish; inactive/draft products stay drafts.
+     */
+    private function resolvePostStatus($product): string
+    {
+        $configured = isset($this->settings()['import_post_status'])
+            ? (string) $this->settings()['import_post_status']
+            : 'publish';
+        $configured = in_array($configured, ['publish', 'draft'], true) ? $configured : 'publish';
+
+        if ($configured === 'draft') {
+            return 'draft';
+        }
+
+        $status = $product->getAttribute('status');
+
+        return in_array($status, [1, '1', 'Active', 'active'], true) ? 'publish' : 'draft';
+    }
+
+    /**
+     * Resolve the retail price from either the v3 `price` or `prices.retail` shape.
+     */
+    private function resolvePrice($product): float
+    {
+        $price = $product->getAttribute('price');
+        if ($price === null) {
+            $prices = $product->getAttribute('prices');
+            if (is_array($prices)) {
+                $price = $prices['retail'] ?? null;
+            }
+        }
+        return (float) ($price ?? 0);
+    }
+
+    /**
+     * Resolve available stock across v3 inventory shapes.
+     */
+    private function resolveStock($product): int
+    {
+        $available = $product->getAttribute('available');
+        if ($available !== null) {
+            return (int) $available;
+        }
+
+        $inventory = $product->getAttribute('inventory');
+        if (is_array($inventory)) {
+            if (isset($inventory['available'])) {
+                return (int) $inventory['available'];
+            }
+            if (isset($inventory['remain'])) {
+                return (int) $inventory['remain'];
+            }
+        }
+
+        return (int) $product->getTotalQuantity();
     }
 }

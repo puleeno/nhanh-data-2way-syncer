@@ -29,6 +29,8 @@ class Defaults
             'auto_stock_update' => 1,
             'auto_create_missing_web_product' => 0,
             'brand_taxonomy' => 'product_brand',
+            // Post status applied to products created by the Nhanh -> Woo import.
+            'import_post_status' => 'publish',
             // UI/performance modes for catalogs with many products/variations/orders.
             'ui_mode' => 'compact', // compact|advanced
             'products_per_page_compact' => 20,

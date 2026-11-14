@@ -65,6 +65,11 @@ class SettingsService
             $brand_tax = 'product_brand';
         }
 
+        $import_post_status = isset($input['import_post_status']) ? sanitize_key((string) $input['import_post_status']) : 'publish';
+        if (!in_array($import_post_status, ['publish', 'draft'], true)) {
+            $import_post_status = 'publish';
+        }
+
         $text = function ($key) use ($input) {
             $v = isset($input[$key]) ? (string) $input[$key] : '';
             return function_exists('sanitize_text_field') ? sanitize_text_field($v) : trim($v);
@@ -110,6 +115,7 @@ class SettingsService
             'auto_stock_update' => $bool('auto_stock_update'),
             'auto_create_missing_web_product' => $bool('auto_create_missing_web_product'),
             'brand_taxonomy' => $brand_tax,
+            'import_post_status' => $import_post_status,
             'ui_mode' => $ui_mode,
             'products_per_page_compact' => $clamp('products_per_page_compact', 20, 5, 100),
             'products_per_page_advanced' => $clamp('products_per_page_advanced', 100, 20, 500),
