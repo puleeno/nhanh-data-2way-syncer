@@ -3,7 +3,6 @@
 namespace Puleeno\NhanhVn\Syncer\Woo;
 
 use WC_Product;
-use WP_Error;
 
 /**
  * Thin adapter over the WooCommerce product/term APIs.
@@ -17,13 +16,13 @@ class WooBridge
     /**
      * Create or update a product from a normalized Nhanh row.
      *
-     * @param array<string,mixed> $data  Keys: name, sku, price, stock, description, categories (term ids), images (urls), status, type
+     * @param array<string,mixed> $data Keys: name, sku, price, stock, description, categories (term ids), images (urls), status
      * @return int Product id (0 on failure)
      */
     public function upsertProduct(array $data): int
     {
         $sku = isset($data['sku']) ? (string) $data['sku'] : '';
-        $existingId = $sku !== '' ? wc_get_product_id_by_sku($sku) : 0;
+        $existingId = $sku !== '' && function_exists('wc_get_product_id_by_sku') ? wc_get_product_id_by_sku($sku) : 0;
 
         if ($existingId > 0) {
             $product = wc_get_product($existingId);
@@ -57,16 +56,102 @@ class WooBridge
         if (isset($data['categories']) && is_array($data['categories'])) {
             $product->set_category_ids(array_values(array_map('intval', $data['categories'])));
         }
-        if (isset($data['images']) && is_array($data['images'])) {
-            $images = [];
-            foreach ($data['images'] as $idx => $url) {
-                $images[] = ['position' => $idx, 'src' => esc_url_raw($url)];
-            }
-            $product->set_images($images);
-        }
 
         $productId = $product->save();
-        return is_wp_error($productId) ? 0 : (int) $productId;
+        if (is_wp_error($productId) || (int) $productId <= 0) {
+            return 0;
+        }
+        $productId = (int) $productId;
+
+        // Images must be sideloaded into the media library: WC_Product has no
+        // set_images() and only accepts attachment IDs. Skip when the product
+        // already has an image, so re-scans of an unchanged catalog stay cheap.
+        if (!empty($data['images']) && is_array($data['images']) && (int) $product->get_image_id() <= 0) {
+            $this->applyImages($productId, $data['images']);
+        }
+
+        return $productId;
+    }
+
+    /**
+     * Sideload external image URLs into the media library and attach them.
+     *
+     * @param array<int,string> $urls
+     */
+    private function applyImages(int $productId, array $urls): void
+    {
+        $urls = array_values(array_filter(array_map('strval', $urls)));
+        if (!$urls) {
+            return;
+        }
+
+        $attachmentIds = [];
+        foreach ($urls as $url) {
+            $url = esc_url_raw($url);
+            if ($url === '' || !preg_match('#^https?://#i', $url)) {
+                continue;
+            }
+
+            // Reuse an existing attachment when the URL is already in the library.
+            if (function_exists('attachment_url_to_postid')) {
+                $existing = (int) attachment_url_to_postid($url);
+                if ($existing > 0) {
+                    $attachmentIds[] = $existing;
+                    continue;
+                }
+            }
+
+            $id = $this->sideloadImage($url, $productId);
+            if ($id > 0) {
+                $attachmentIds[] = $id;
+            }
+        }
+
+        if (!$attachmentIds) {
+            return;
+        }
+
+        $product = wc_get_product($productId);
+        if (!$product instanceof WC_Product) {
+            return;
+        }
+
+        $product->set_image_id((int) array_shift($attachmentIds));
+        if ($attachmentIds) {
+            $product->set_gallery_image_ids(array_map('intval', $attachmentIds));
+        }
+        $product->save();
+    }
+
+    /**
+     * Download one image into the media library. Returns attachment id (0 on failure).
+     */
+    private function sideloadImage(string $url, int $postId): int
+    {
+        if (!function_exists('media_sideload_image')) {
+            return 0;
+        }
+
+        // media_sideload_image() pulls these in.
+        if (!function_exists('download_url')) {
+            if (defined('ABSPATH')) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+            }
+        }
+        if (!function_exists('media_sideload_image') && defined('ABSPATH')) {
+            require_once ABSPATH . 'wp-admin/includes/media.php';
+        }
+        if (!function_exists('wp_read_image_metadata') && defined('ABSPATH')) {
+            require_once ABSPATH . 'wp-admin/includes/image.php';
+        }
+
+        if (!function_exists('media_sideload_image')) {
+            return 0;
+        }
+
+        $id = media_sideload_image($url, $postId, null, 'id');
+
+        return is_wp_error($id) ? 0 : (int) $id;
     }
 
     /**

@@ -30,7 +30,11 @@ class Defaults
             'auto_create_missing_web_product' => 0,
             'brand_taxonomy' => 'product_brand',
             // Post status applied to products created by the Nhanh -> Woo import.
-            'import_post_status' => 'publish',
+            'import_post_status' => 'draft',
+            // Import performance / scoping knobs.
+            'import_images' => 1,
+            'import_max_per_run' => 100,
+            'import_max_seconds' => 600,
             // UI/performance modes for catalogs with many products/variations/orders.
             'ui_mode' => 'compact', // compact|advanced
             'products_per_page_compact' => 20,

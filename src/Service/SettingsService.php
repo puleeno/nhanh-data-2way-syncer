@@ -65,10 +65,16 @@ class SettingsService
             $brand_tax = 'product_brand';
         }
 
-        $import_post_status = isset($input['import_post_status']) ? sanitize_key((string) $input['import_post_status']) : 'publish';
+        $import_post_status = isset($input['import_post_status']) ? sanitize_key((string) $input['import_post_status']) : 'draft';
         if (!in_array($import_post_status, ['publish', 'draft'], true)) {
-            $import_post_status = 'publish';
+            $import_post_status = 'draft';
         }
+
+        $max_per_run = isset($input['import_max_per_run']) ? (int) $input['import_max_per_run'] : 50;
+        $import_max_per_run = max(1, min(500, $max_per_run));
+
+        $max_seconds = isset($input['import_max_seconds']) ? (int) $input['import_max_seconds'] : 120;
+        $import_max_seconds = max(10, min(3600, $max_seconds));
 
         $text = function ($key) use ($input) {
             $v = isset($input[$key]) ? (string) $input[$key] : '';
@@ -116,6 +122,9 @@ class SettingsService
             'auto_create_missing_web_product' => $bool('auto_create_missing_web_product'),
             'brand_taxonomy' => $brand_tax,
             'import_post_status' => $import_post_status,
+            'import_images' => !empty($input['import_images']) ? 1 : 0,
+            'import_max_per_run' => $import_max_per_run,
+            'import_max_seconds' => $import_max_seconds,
             'ui_mode' => $ui_mode,
             'products_per_page_compact' => $clamp('products_per_page_compact', 20, 5, 100),
             'products_per_page_advanced' => $clamp('products_per_page_advanced', 100, 20, 500),

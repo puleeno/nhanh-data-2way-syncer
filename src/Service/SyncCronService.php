@@ -19,6 +19,9 @@ class SyncCronService
 {
     public const HOOK = 'nhanh_syncer_run_import';
 
+/** A running job older than this is treated as crashed and reclaimed. */
+public const STALE_JOB_SECONDS = 900;
+
     /** @var JobRepository */
     private $jobs;
 
@@ -88,12 +91,20 @@ class SyncCronService
             return ['ok' => false, 'error' => 'auto_sync_disabled'];
         }
 
-        // Prevent duplicate concurrent runs.
-        $running = $this->jobs->recent(5);
-        foreach ($running as $job) {
-            if ($job['job_type'] === 'import' && $job['status'] === 'running') {
-                return ['ok' => false, 'error' => 'already_running'];
+        // Prevent duplicate concurrent runs. A job whose started_at is older than
+        // the stale threshold is considered crashed and reclaimed, otherwise a
+        // single killed run would block every future import forever.
+        $staleBefore = gmdate('Y-m-d H:i:s', time() - self::STALE_JOB_SECONDS);
+        foreach ($this->jobs->recent(5) as $job) {
+            if ($job['job_type'] !== 'import' || $job['status'] !== 'running') {
+                continue;
             }
+            $startedAt = (string) ($job['started_at'] ?? '');
+            if ($startedAt !== '' && $startedAt < $staleBefore) {
+                $this->jobs->finish((int) $job['id'], 'failed', 0, 0, 0, ['error' => 'stale_running_job_reclaimed']);
+                continue;
+            }
+            return ['ok' => false, 'error' => 'already_running'];
         }
 
         $import = new ImportService(

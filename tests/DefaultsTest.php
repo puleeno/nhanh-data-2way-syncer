@@ -62,7 +62,7 @@ class DefaultsTest extends TestCase
         $this->assertSame('compact', $settings['ui_mode']);
         $this->assertSame(15, $settings['sync_interval_minutes']);
         $this->assertSame('product_brand', $settings['brand_taxonomy']);
-        $this->assertSame('publish', $settings['import_post_status']);
+        $this->assertSame('draft', $settings['import_post_status']);
         $this->assertSame(0, $settings['is_connected']);
     }
 

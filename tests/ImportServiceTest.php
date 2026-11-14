@@ -97,7 +97,7 @@ class ImportServiceTest extends TestCase
             $this->termMaps,
             new WooBridge(),
             $client,
-            array_merge(['auto_sync_enabled' => 1, 'brand_taxonomy' => 'product_brand', 'import_post_status' => 'publish'], $settings)
+            array_merge(['auto_sync_enabled' => 1, 'brand_taxonomy' => 'product_brand', 'import_post_status' => 'draft'], $settings)
         );
     }
 
@@ -201,7 +201,7 @@ class ImportServiceTest extends TestCase
         $wc = \wc_get_product((int) $map['wc_product_id']);
         $this->assertNotNull($wc);
         $data = $wc->get_data();
-        $this->assertSame('publish', $data['status']);
+        $this->assertSame('draft', $data['status']);
         $this->assertSame('SKU-5001', $data['sku']);
         $this->assertSame(250000.0, (float) $data['price']);
         $this->assertSame(7, (int) $data['stock_qty']);
@@ -233,7 +233,7 @@ class ImportServiceTest extends TestCase
         $this->assertSame(4, (int) $map['nhanh_stock_total']);
     }
 
-    public function testInactiveProductIsImportedAsDraft(): void
+    public function testInactiveProductStillFollowsConfiguredPostStatus(): void
     {
         $products = [
             new Product([
@@ -246,11 +246,43 @@ class ImportServiceTest extends TestCase
             ]),
         ];
 
+        // Default is draft, regardless of Nhanh's active flag.
         $this->service([], [], $products)->run(['trigger' => 'test']);
-
         $map = $this->productMaps->findByCode('SKU-5003');
         $wc = \wc_get_product((int) $map['wc_product_id']);
         $this->assertSame('draft', $wc->get_data()['status']);
+    }
+
+    public function testConfiguredPublishWinsOverInactiveFlag(): void
+    {
+        $products = [
+            new Product(['id' => 5005, 'code' => 'SKU-5005', 'name' => 'Inactive', 'price' => 1000, 'status' => 2]),
+        ];
+
+        $this->service([], [], $products, ['import_post_status' => 'publish'])->run(['trigger' => 'test']);
+
+        $map = $this->productMaps->findByCode('SKU-5005');
+        $wc = \wc_get_product((int) $map['wc_product_id']);
+        $this->assertSame('publish', $wc->get_data()['status']);
+    }
+
+    public function testImageListPrefersAvatarAndPopulatesMap(): void
+    {
+        $products = [
+            new Product([
+                'id' => 5006,
+                'code' => 'SKU-5006',
+                'name' => 'With image',
+                'price' => 1000,
+                'status' => 1,
+                'images' => ['avatar' => 'https://cdn/avatar.jpg', 'others' => ['https://cdn/other.jpg']],
+            ]),
+        ];
+
+        $this->service([], [], $products, ['import_images' => 0])->run(['trigger' => 'test']);
+
+        $map = $this->productMaps->findByCode('SKU-5006');
+        $this->assertSame('https://cdn/avatar.jpg', $map['image_url']);
     }
 
     public function testImportPostStatusDraftOverridesActivity(): void

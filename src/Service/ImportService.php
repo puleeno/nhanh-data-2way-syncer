@@ -37,6 +37,15 @@ class ImportService
     /** @var array<string,mixed>|null */
     private $settings;
 
+    /** @var array<string,string> */
+    private $lastSectionErrors = [];
+
+    /** @var float */
+    private $deadline = 0.0;
+
+    /** @var int */
+    private $maxProducts = 50;
+
     /**
      * @param object|null $client   Injectable Nhanh client (tests); built from settings when null.
      * @param array<string,mixed>|null $settings Injectable settings (tests); read from Plugin when null.
@@ -76,6 +85,17 @@ class ImportService
         $failed = 0;
         $failures = [];
         $errorDetail = '';
+        $deferred = 0;
+
+        // Per-run budget so a cron tick always finishes; the remainder is picked
+        // up by the next scheduled run (upserts are idempotent).
+        $maxSeconds = isset($this->settings()['import_max_seconds'])
+            ? max(10, (int) $this->settings()['import_max_seconds'])
+            : 600;
+        $this->maxProducts = isset($this->settings()['import_max_per_run'])
+            ? max(1, (int) $this->settings()['import_max_per_run'])
+            : 100;
+        $this->deadline = $started + $maxSeconds;
 
         try {
             $client = $this->client();
@@ -83,10 +103,12 @@ class ImportService
                 throw new \RuntimeException('missing_credentials');
             }
 
-            $categories = $client->products()->getCategories([], ['size' => 100]);
-            $brands = $client->products()->getBrands();
-
-            $categoryResult = $this->importCategories($client, $categories);
+            // Each entity type is isolated: a failing Nhanh endpoint degrades that
+            // section only instead of aborting the whole import.
+            $categoryResult = $this->safeSection('categories', function () use ($client) {
+                $categories = $client->products()->getCategories([], ['size' => 100]);
+                return $this->importCategories($client, $categories);
+            }, ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'map' => []]);
             $scanned += $categoryResult['scanned'];
             $updated += $categoryResult['updated'];
             if ($categoryResult['failed'] > 0) {
@@ -94,30 +116,48 @@ class ImportService
                 $failed += $categoryResult['failed'];
             }
 
-            if (empty($brands)) {
-                // no brand yet
-            } else {
-                $brandResult = $this->importBrands($brands);
-                $scanned += $brandResult['scanned'];
-                $updated += $brandResult['updated'];
-                if ($brandResult['failed'] > 0) {
-                    $failures[] = 'brands';
-                    $failed += $brandResult['failed'];
+            $brandResult = $this->safeSection('brands', function () use ($client) {
+                $brands = $client->products()->getBrands();
+                if (empty($brands)) {
+                    return ['scanned' => 0, 'updated' => 0, 'failed' => 0];
                 }
+                return $this->importBrands($brands);
+            }, ['scanned' => 0, 'updated' => 0, 'failed' => 0]);
+            $scanned += $brandResult['scanned'];
+            $updated += $brandResult['updated'];
+            if ($brandResult['failed'] > 0) {
+                $failures[] = 'brands';
+                $failed += $brandResult['failed'];
             }
 
-            $products = $client->products()->search(['paginator' => ['size' => 100, 'sort' => ['id' => 'desc']]]);
-            $products = $products instanceof \Illuminate\Support\Collection ? $products->all() : (array) $products;
+            $prodResult = $this->safeSection('products', function () use ($client, $categoryResult) {
+                $products = $client->products()->search(['paginator' => ['size' => 100, 'sort' => ['id' => 'desc']]]);
+                $products = $products instanceof \Illuminate\Support\Collection ? $products->all() : (array) $products;
 
-            $prodResult = $this->importProducts($products, $categoryResult['map']);
+                return $this->importProducts($products, $categoryResult['map']);
+            }, ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0]);
             $scanned += $prodResult['scanned'];
             $updated += $prodResult['updated'];
             $failed += $prodResult['failed'];
+            $deferred += (int) ($prodResult['deferred'] ?? 0);
             if ($prodResult['failed'] > 0) {
                 $failures[] = 'products';
             }
 
             $status = ($failed > 0) ? 'partial' : 'success';
+
+            // Surface per-section failures without losing the overall result.
+            foreach ($this->lastSectionErrors as $section => $message) {
+                $failures[] = $section . ': ' . $message;
+                if ($status === 'success') {
+                    $status = 'partial';
+                }
+                $errorDetail = trim($errorDetail . ' ' . $section . ': ' . $message);
+            }
+
+            if ($status === 'partial' && $errorDetail === '' && $failures) {
+                $errorDetail = 'one or more sections failed';
+            }
         } catch (\Throwable $e) {
             $status = 'failed';
             $errorDetail = $e->getMessage();
@@ -129,7 +169,9 @@ class ImportService
             'scanned' => $scanned,
             'updated' => $updated,
             'failed' => $failed,
+            'deferred' => $deferred,
             'error' => $errorDetail,
+            'section_errors' => $this->lastSectionErrors,
         ]);
 
         $this->jobs->log(
@@ -149,6 +191,7 @@ class ImportService
             'scanned' => $scanned,
             'updated' => $updated,
             'failed' => $failed,
+            'deferred' => $deferred,
             'error' => $errorDetail,
             'duration_ms' => $durationMs,
         ];
@@ -182,6 +225,27 @@ class ImportService
             return $this->client;
         }
         return (new NhanhClientFactory($this->settings()))->make();
+    }
+
+    /**
+     * Run one import section, converting a thrown SDK/transport error into a
+     * failed-section result so the remaining sections still run.
+     *
+     * @param string $name
+     * @param callable $work
+     * @param array<string,mixed> $empty
+     * @return array<string,mixed>
+     */
+    private function safeSection(string $name, callable $work, array $empty): array
+    {
+        try {
+            $result = $work();
+            return is_array($result) ? array_merge($empty, $result) : $empty;
+        } catch (\Throwable $e) {
+            $this->lastSectionErrors[$name] = $e->getMessage();
+
+            return $empty;
+        }
     }
 
     /**
@@ -319,11 +383,21 @@ class ImportService
         $updated = 0;
         $failed = 0;
         $skipped = 0;
+        $deferred = 0;
+        $processed = 0;
+        $importImages = !empty($this->settings()['import_images']);
 
         foreach ($products as $p) {
             if (!$p instanceof \Puleeno\NhanhVn\Entities\Product\Product) {
                 continue;
             }
+
+            // Budget guard: stop cleanly and let the next cron tick continue.
+            if ($processed >= $this->maxProducts || microtime(true) >= $this->deadline) {
+                $deferred = max(0, count($products) - $processed);
+                break;
+            }
+            $processed++;
             $scanned++;
 
             $nhanhId = (string) ($p->getAttribute('id') ?? $p->getAttribute('idNhanh') ?? '');
@@ -376,7 +450,8 @@ class ImportService
             if ($image && !in_array((string) $image, $imageList, true)) {
                 array_unshift($imageList, (string) $image);
             }
-            $data['images'] = $imageList;
+            // Image sideload is optional: it is the slowest part of the import.
+            $data['images'] = $importImages ? $imageList : [];
 
             $productId = $this->woo->upsertProduct($data);
             if ($productId <= 0) {
@@ -400,7 +475,7 @@ class ImportService
                 'wc_variation_id' => 0,
                 'wc_sku' => $sku,
                 'sync_status' => 'synced',
-                'image_url' => !empty($image) ? (string) $image : null,
+                'image_url' => $imageList ? (string) $imageList[0] : (!empty($image) ? (string) $image : null),
                 'last_compared_at' => current_time('mysql', 1),
                 'last_synced_at' => current_time('mysql', 1),
             ]);
@@ -412,7 +487,7 @@ class ImportService
             }
         }
 
-        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'skipped' => $skipped];
+        return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'skipped' => $skipped, 'deferred' => $deferred];
     }
 
     /**
@@ -424,16 +499,9 @@ class ImportService
     {
         $configured = isset($this->settings()['import_post_status'])
             ? (string) $this->settings()['import_post_status']
-            : 'publish';
-        $configured = in_array($configured, ['publish', 'draft'], true) ? $configured : 'publish';
+            : 'draft';
 
-        if ($configured === 'draft') {
-            return 'draft';
-        }
-
-        $status = $product->getAttribute('status');
-
-        return in_array($status, [1, '1', 'Active', 'active'], true) ? 'publish' : 'draft';
+        return in_array($configured, ['publish', 'draft'], true) ? $configured : 'draft';
     }
 
     /**
