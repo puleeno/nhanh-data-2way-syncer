@@ -148,6 +148,7 @@ class Schema
             wc_order_id bigint(20) unsigned NOT NULL,
             nhanh_order_id varchar(64) NOT NULL,
             nhanh_order_code varchar(64) DEFAULT NULL,
+            source varchar(20) NOT NULL DEFAULT 'wc_to_nhanh',
             sync_status varchar(32) NOT NULL DEFAULT 'created',
             total_amount decimal(18,2) DEFAULT NULL,
             last_synced_at datetime DEFAULT NULL,

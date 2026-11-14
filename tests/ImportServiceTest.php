@@ -325,6 +325,45 @@ class ImportServiceTest extends TestCase
         $this->assertSame(0, $result['updated']);
     }
 
+    public function testFailingSectionYieldsPartialStatusAndTitle(): void
+    {
+        $client = new class extends FakeNhanhClient {
+            public function __construct()
+            {
+            }
+            public function products(): FakeProductsApi
+            {
+                throw new \RuntimeException('brands endpoint down');
+            }
+        };
+
+        $service = new ImportService(
+            $this->jobs,
+            $this->productMaps,
+            $this->termMaps,
+            new WooBridge(),
+            $client,
+            ['auto_sync_enabled' => 1, 'brand_taxonomy' => 'product_brand']
+        );
+
+        $result = $service->run(['trigger' => 'test']);
+
+        $this->assertSame('partial', $result['status']);
+        $this->assertStringContainsString('brands endpoint down', $result['error']);
+
+        $job = $this->jobs->find($result['job_id']);
+        $this->assertSame('partial', $job['status']);
+
+        $logs = $this->jobs->recent(5);
+        $found = false;
+        foreach ($logs as $row) {
+            if ((int) $row['id'] === (int) $result['job_id']) {
+                $found = true;
+            }
+        }
+        $this->assertTrue($found);
+    }
+
     public function testJobIsPersistedWithCounters(): void
     {
         $products = [new Product(['id' => 20, 'code' => 'SKU-20', 'name' => 'X', 'price' => 10, 'status' => 1])];

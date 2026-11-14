@@ -32,7 +32,7 @@ class Formatter
         return self::vnd($n);
     }
 
-    public static function statusBadge(string $status): array
+    public static function statusBadge(?string $status): array
     {
         $map = [
             'synced' => ['ok', 'Đã khớp & Đồng bộ'],
@@ -44,7 +44,7 @@ class Formatter
         return $map[$status] ?? ['neutral', $status];
     }
 
-    public static function velocityBadge(string $velocity): array
+    public static function velocityBadge(?string $velocity): array
     {
         $map = [
             'fast' => ['ok', 'Luân chuyển nhanh'],

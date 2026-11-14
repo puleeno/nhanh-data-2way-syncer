@@ -224,7 +224,30 @@ Kỳ vọng: `status=success`, `failed_count=0`.
 Mỗi nhịp có ngân sách riêng: hết giờ thì dừng gọn và nhịp sau chạy tiếp
 (upsert idempotent). Sản phẩm đã có ảnh sẽ **không tải lại ảnh**.
 
-## 7. Sự cố thường gặp
+## 7. Màn hình quản trị (nguồn dữ liệu)
+
+Các màn hình dưới đây đọc trực tiếp từ bảng của plugin, không còn dữ liệu mẫu:
+
+| Màn hình | Nguồn dữ liệu | Ghi chú |
+| --- | --- | --- |
+| **Liên kết Sản phẩm** (`nhanh-syncer-mapping`) | `nhanh_sync_product_map` | Giá/tồn phía Web lấy từ sản phẩm WooCommerce (`wc_get_product`); trạng thái khớp/lệch tính lại bằng `SyncStatusResolver`. Tên danh mục/thương hiệu resolve từ `nhanh_sync_term_map`. |
+| **Danh mục & Thương hiệu** (`nhanh-syncer-categories`) | `nhanh_sync_term_map` | `nhanh_term_type` = `category` \| `brand`; tên term WC lấy từ `wc_term_name`, fallback `get_term()`. |
+| **Liên kết Đơn hàng** (`nhan-syncer-orders`) | `nhanh_sync_order_map` | `source` (`wc_to_nhanh` \| `nhanh_to_wc`), `total_amount`, link tới đơn WC qua `wc_order_id` (HPOS-safe). |
+| **Nhật ký & Tra soát** (`nhan-syncer-logs`) | `nhanh_sync_logs` | `event_time`, `type`, `reference_code`, `status`, `duration_ms`. |
+| **Tổng quan / Báo cáo** | `nhanh_sync_stats_daily` + tổng hợp từ `product_map` | Doanh thu theo ngày; luân chuyển theo danh mục. |
+
+Ghi chú:
+
+- Lọc và phân trang hiện thực hiện ở tầng PHP trên tập dữ liệu đã tải.
+  Với catalog rất lớn, nên chuyển sang lọc/phân trang bằng SQL (các bảng đã có
+  index `sync_status`, `updated_at`, `nhanh_code`).
+- `nhanh_sync_order_map` có cột `source` (thêm ở DB version `1.1.0`); nếu site
+  cũ chưa có, chạy:
+  ```bash
+  wp eval 'Puleeno\NhanhVn\Syncer\Database\Schema::maybe_upgrade();'
+  ```
+
+## 8. Sự cố thường gặp
 
 | Hiện tượng | Nguyên nhân / cách xử lý |
 | --- | --- |
@@ -234,10 +257,10 @@ Mỗi nhịp có ngân sách riêng: hết giờ thì dừng gọn và nhịp sa
 | Import chậm | Giảm `import_max_per_run` hoặc đặt `import_images=0`. |
 | Cron không chạy | Kiểm tra launchd (`launchctl print ...`) và `curl -I https://<domain>/wp-cron.php`. |
 
-## 8. Ghi chú kỹ thuật
+## 9. Ghi chú kỹ thuật
 
-- `nhan_syncer_run_import` chỉ tồn tại sau khi plugin được activate **hoặc** settings được lưu
-  (hook `nhan_syncer_settings_saved` → `SyncCronService::onSettingsSave`).
+- `nhanh_syncer_run_import` chỉ tồn tại sau khi plugin được activate **hoặc** settings được lưu
+  (hook `nhanh_syncer_settings_saved` → `SyncCronService::onSettingsSave`).
 - Nếu event không có trong `wp cron event list`, chạy:
   ```bash
   wp eval '$s = new Puleeno\NhanhVn\Syncer\Service\SyncCronService(new Puleeno\NhanhVn\Syncer\Database\JobRepository()); $s->activate();'

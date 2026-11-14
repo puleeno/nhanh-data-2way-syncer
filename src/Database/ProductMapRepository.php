@@ -88,6 +88,39 @@ class ProductMapRepository
     }
 
     /**
+     * All product mappings for the admin list screen, newest first.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function allForAdmin(int $limit = 5000): array
+    {
+        global $wpdb;
+        $rows = $wpdb->get_results(
+            $wpdb->prepare("SELECT * FROM {$this->table()} ORDER BY id DESC LIMIT %d", $limit),
+            ARRAY_A
+        );
+
+        return is_array($rows) ? $rows : [];
+    }
+
+    /**
+     * Aggregate counters for the KPI row.
+     *
+     * @return array{total:int,linked:int,with_image:int}
+     */
+    public function counts(): array
+    {
+        global $wpdb;
+        $table = $this->table();
+
+        return [
+            'total' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table}"),
+            'linked' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE wc_product_id > 0"),
+            'with_image' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table} WHERE image_url IS NOT NULL AND image_url <> ''"),
+        ];
+    }
+
+    /**
      * Mark a mapping row as failed with an error message.
      */
     public function markError(int $mapId, string $error): void

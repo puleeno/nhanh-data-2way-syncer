@@ -538,8 +538,11 @@ class Renderer
         }
         echo '</tr></thead><tbody>';
         foreach ($rows as $l) {
-            $pill = $l['status'] === 'success' ? 'ok' : ($l['status'] === 'warning' ? 'warn' : 'bad');
-            $label = $l['status'] === 'success' ? 'Thành công' : ($l['status'] === 'warning' ? 'Cảnh báo' : 'Lỗi');
+            $isWarn = in_array($l['status'], ['warning', 'partial'], true);
+            $pill = $l['status'] === 'success' ? 'ok' : ($isWarn ? 'warn' : 'bad');
+            $label = $l['status'] === 'success'
+                ? 'Thành công'
+                : ($l['status'] === 'partial' ? 'Một phần' : ($isWarn ? 'Cảnh báo' : 'Lỗi'));
             echo '<tr><td class="mono">' . esc_html($l['time']) . '</td><td><span class="pill neutral">' . esc_html($this->log_type_label($l['type'])) . '</span></td><td class="mono">' . esc_html($l['ref']) . '</td>';
             if ($mode === 'advanced') {
                 echo '<td><strong>' . esc_html($l['title']) . '</strong></td><td class="muted">' . esc_html($l['detail']) . '</td>';
@@ -825,13 +828,13 @@ class Renderer
         echo '<div class="kv"><span>' . esc_html($k) . '</span><strong class="' . ($ok ? 'ok' : 'bad') . '">' . esc_html($v) . '</strong></div>';
     }
 
-    private function status_badge(string $status): string
+    private function status_badge(?string $status): string
     {
         $m = Formatter::statusBadge($status);
         return '<span class="pill ' . esc_attr($m[0]) . '">' . esc_html($m[1]) . '</span>';
     }
 
-    private function velocity_badge(string $v): string
+    private function velocity_badge(?string $v): string
     {
         $m = Formatter::velocityBadge($v);
         return '<span class="pill ' . esc_attr($m[0]) . '">' . esc_html($m[1]) . '</span>';

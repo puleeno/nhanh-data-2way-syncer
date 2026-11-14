@@ -318,6 +318,12 @@ if (!class_exists('WP_Term')) {
         }
     }
 }
+if (!function_exists('date_i18n')) {
+    function date_i18n($format, $timestamp = null) { return date($format, $timestamp ?: time()); }
+}
+if (!function_exists('get_term')) {
+    function get_term($term_id, $taxonomy = '') { return $GLOBALS['__wp_terms'][$term_id] ?? null; }
+}
 if (!function_exists('get_term_by')) {
     function get_term_by($field, $value, $taxonomy = '') {
         foreach ($GLOBALS['__wp_terms'] ?? [] as $term) {
@@ -374,8 +380,33 @@ if (!class_exists('wpdb')) {
         {
             $conds = [];
             foreach (preg_split('/\s+AND\s+/i', $where) as $part) {
-                if (preg_match('/(\w+)\s*=\s*(.+)$/', trim($part), $m)) {
-                    $conds[$m[1]] = trim($m[2], "'\"");
+                $part = trim($part);
+                if ($part === '') {
+                    continue;
+                }
+                // IS [NOT] NULL
+                if (preg_match('/(\w+)\s+IS\s+(NOT\s+)?NULL$/i', $part, $m)) {
+                    $conds[$m[1]] = ['op' => $m[2] ? 'is_not_null' : 'is_null'];
+                    continue;
+                }
+                // col <> value | col != value
+                if (preg_match('/(\w+)\s*(?:!=|<>)\s*(.+)$/i', $part, $m)) {
+                    $conds[$m[1]] = ['op' => 'neq', 'value' => trim($m[2], "'\"")];
+                    continue;
+                }
+                // col IN ('a','b')
+                if (preg_match('/(\w+)\s+IN\s*\(([^)]*)\)$/i', $part, $m)) {
+                    $values = array_values(array_filter(array_map(function ($v) {
+                        return trim(trim($v), "'\" ");
+                    }, explode(',', $m[2])), function ($v) {
+                        return $v !== '';
+                    }));
+                    $conds[$m[1]] = ['op' => 'in', 'values' => $values];
+                    continue;
+                }
+                // col = value
+                if (preg_match('/(\w+)\s*=\s*(.+)$/', $part, $m)) {
+                    $conds[$m[1]] = ['op' => 'eq', 'value' => trim($m[2], "'\"")];
                 }
             }
             return $conds;
@@ -383,9 +414,36 @@ if (!class_exists('wpdb')) {
 
         private function matches(array $row, array $conds): bool
         {
-            foreach ($conds as $key => $value) {
-                if (!array_key_exists($key, $row) || (string) $row[$key] !== (string) $value) {
-                    return false;
+            foreach ($conds as $key => $cond) {
+                $exists = array_key_exists($key, $row);
+                $current = $exists ? $row[$key] : null;
+
+                switch ($cond['op']) {
+                    case 'is_null':
+                        if ($current !== null) {
+                            return false;
+                        }
+                        break;
+                    case 'is_not_null':
+                        if ($current === null) {
+                            return false;
+                        }
+                        break;
+                    case 'in':
+                        if (!in_array((string) $current, array_map('strval', $cond['values']), true)) {
+                            return false;
+                        }
+                        break;
+                    case 'neq':
+                        if ((string) $current === (string) $cond['value']) {
+                            return false;
+                        }
+                        break;
+                    case 'eq':
+                    default:
+                        if (!$exists || (string) $current !== (string) $cond['value']) {
+                            return false;
+                        }
                 }
             }
             return true;
@@ -435,9 +493,17 @@ if (!class_exists('wpdb')) {
 
         public function update($table, $data, $where)
         {
+            // Accept both raw scalars (id => 5) and parsed conditions.
+            $conds = [];
+            foreach ($where as $key => $value) {
+                $conds[$key] = is_array($value) && isset($value['op'])
+                    ? $value
+                    : ['op' => 'eq', 'value' => $value];
+            }
+
             $count = 0;
             foreach ($this->tables[$table] ?? [] as $key => $row) {
-                if ($this->matches($row, $where)) {
+                if ($this->matches($row, $conds)) {
                     $this->tables[$table][$key] = array_merge($row, $data);
                     $count++;
                 }
@@ -452,6 +518,23 @@ if (!class_exists('wpdb')) {
             if (!$rows) {
                 return null;
             }
+
+            // Aggregates: COUNT(*), SUM(col), MAX(col)
+            if (preg_match('/SELECT\s+(COUNT|SUM|MAX|MIN)\s*\(\s*(\*|\w+)\s*\)/i', $query, $m)) {
+                $fn = strtoupper($m[1]);
+                $col = $m[2];
+                if ($fn === 'COUNT') {
+                    return count($rows);
+                }
+                $sum = 0;
+                foreach ($rows as $row) {
+                    if ($col !== '*' && array_key_exists($col, $row) && is_numeric($row[$col])) {
+                        $sum += (float) $row[$col];
+                    }
+                }
+                return $fn === 'SUM' ? $sum : $sum;
+            }
+
             // Honour "SELECT id FROM ..." by returning the id column.
             if (preg_match('/SELECT\s+id\s+FROM/i', $query) && array_key_exists('id', $rows[0])) {
                 return $rows[0]['id'];

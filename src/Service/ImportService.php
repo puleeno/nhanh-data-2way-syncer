@@ -152,7 +152,7 @@ class ImportService
                 if ($status === 'success') {
                     $status = 'partial';
                 }
-                $errorDetail = trim($errorDetail . ' ' . $section . ': ' . $message);
+                $errorDetail = trim($errorDetail . ($errorDetail === '' ? '' : '; ') . $section . ': ' . $message);
             }
 
             if ($status === 'partial' && $errorDetail === '' && $failures) {
@@ -178,7 +178,7 @@ class ImportService
             $jobId,
             'product_sync',
             $status,
-            $status === 'success' ? 'Đồng bộ Nhanh.vn → WooCommerce thành công' : 'Đồng bộ Nhanh.vn → WooCommerce thất bại',
+            self::logTitle($status),
             $errorDetail,
             $durationMs,
             null
@@ -195,6 +195,21 @@ class ImportService
             'error' => $errorDetail,
             'duration_ms' => $durationMs,
         ];
+    }
+
+    /**
+     * Human-readable log title for a job status.
+     */
+    private static function logTitle(string $status): string
+    {
+        switch ($status) {
+            case 'success':
+                return 'Đồng bộ Nhanh.vn → WooCommerce thành công';
+            case 'partial':
+                return 'Đồng bộ Nhanh.vn → WooCommerce hoàn tất một phần';
+            default:
+                return 'Đồng bộ Nhanh.vn → WooCommerce thất bại';
+        }
     }
 
     /**
