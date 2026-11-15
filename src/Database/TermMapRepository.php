@@ -58,18 +58,20 @@ class TermMapRepository
             'updated_at' => $now,
         ], $data);
 
-        $exists = $wpdb->get_var(
+        $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT id FROM {$this->table()} WHERE nhanh_term_type = %s AND nhanh_term_id = %s AND wc_taxonomy = %s",
-                $payload['nhanh_term_type'] ?? '',
-                $payload['nhanh_term_id'] ?? '',
+                "SELECT * FROM {$this->table()} WHERE nhanh_term_type = %s AND nhan_term_id = %s AND wc_taxonomy = %s",
+                $payload['nhan_term_type'] ?? '',
+                $payload['nhan_term_id'] ?? '',
                 $payload['wc_taxonomy'] ?? ''
-            )
+            ),
+            ARRAY_A
         );
 
-        if ($exists) {
-            $wpdb->update($this->table(), $payload, ['id' => (int) $exists]);
-            return (int) $exists;
+        if (!empty($rows) && is_array($rows[0]) && isset($rows[0]['id'])) {
+            $existingId = (int) $rows[0]['id'];
+            $wpdb->update($this->table(), $payload, ['id' => $existingId]);
+            return $existingId;
         }
 
         $payload['created_at'] = $now;

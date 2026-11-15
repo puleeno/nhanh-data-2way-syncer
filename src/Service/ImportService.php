@@ -86,6 +86,9 @@ class ImportService
         $failures = [];
         $errorDetail = '';
         $deferred = 0;
+        $categoryResult = ['scanned' => 0, 'updated' => 0, 'failed' => 0];
+        $brandResult = ['scanned' => 0, 'updated' => 0, 'failed' => 0];
+        $prodResult = ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0, 'deferred' => 0];
 
         // Per-run budget so a cron tick always finishes; the remainder is picked
         // up by the next scheduled run (upserts are idempotent).
@@ -174,14 +177,27 @@ class ImportService
             'section_errors' => $this->lastSectionErrors,
         ]);
 
+        $detail = self::buildLogDetail(
+            $context['trigger'] ?? 'cron',
+            $categoryResult,
+            $brandResult,
+            $prodResult,
+            $scanned,
+            $updated,
+            $failed,
+            $deferred,
+            $durationMs,
+            $errorDetail
+        );
+
         $this->jobs->log(
             $jobId,
             'product_sync',
             $status,
             self::logTitle($status),
-            $errorDetail,
+            $detail,
             $durationMs,
-            null
+            'JOB-' . $jobId
         );
 
         return [
@@ -195,6 +211,62 @@ class ImportService
             'error' => $errorDetail,
             'duration_ms' => $durationMs,
         ];
+    }
+
+    /**
+     * Build a readable audit-log detail line for a job run.
+     *
+     * @param array{scanned?:int,updated?:int,failed?:int} $categories
+     * @param array{scanned?:int,updated?:int,failed?:int} $brands
+     * @param array{scanned?:int,updated?:int,failed?:int,skipped?:int,deferred?:int} $products
+     */
+    private static function buildLogDetail(
+        string $trigger,
+        array $categories,
+        array $brands,
+        array $products,
+        int $scanned,
+        int $updated,
+        int $failed,
+        int $deferred,
+        int $durationMs,
+        string $errorDetail = ''
+    ): string {
+        $parts = [];
+        $parts[] = 'Nguồn: ' . $trigger;
+        $parts[] = sprintf(
+            'Danh mục: %d quét, %d cập nhật%s',
+            (int) ($categories['scanned'] ?? 0),
+            (int) ($categories['updated'] ?? 0),
+            (int) ($categories['failed'] ?? 0) > 0 ? ', ' . (int) $categories['failed'] . ' lỗi' : ''
+        );
+        $parts[] = sprintf(
+            'Thương hiệu: %d quét, %d cập nhật%s',
+            (int) ($brands['scanned'] ?? 0),
+            (int) ($brands['updated'] ?? 0),
+            (int) ($brands['failed'] ?? 0) > 0 ? ', ' . (int) $brands['failed'] . ' lỗi' : ''
+        );
+        $parts[] = sprintf(
+            'Sản phẩm: %d quét, %d cập nhật%s%s',
+            (int) ($products['scanned'] ?? 0),
+            (int) ($products['updated'] ?? 0),
+            (int) ($products['failed'] ?? 0) > 0 ? ', ' . (int) $products['failed'] . ' lỗi' : '',
+            (int) ($products['deferred'] ?? 0) > 0 ? ', ' . (int) $products['deferred'] . ' tồn đọng' : ''
+        );
+        $parts[] = sprintf('Tổng: %d quét, %d cập nhật, %d lỗi', $scanned, $updated, $failed);
+
+        if ($deferred > 0) {
+            $parts[] = $deferred . ' mục tồn đọng (nhịp sau chạy tiếp)';
+        }
+        $parts[] = 'Thời lượng: ' . $durationMs . ' ms';
+
+        $detail = implode(' · ', $parts);
+
+        if ($errorDetail !== '') {
+            $detail .= ' — Lỗi: ' . $errorDetail;
+        }
+
+        return $detail;
     }
 
     /**
@@ -281,11 +353,6 @@ class ImportService
      */
     private function importCategories($client, $categories): array
     {
-        $scanned = 0;
-        $updated = 0;
-        $failed = 0;
-        $map = [];
-
         $list = [];
         if ($categories instanceof \Illuminate\Support\Collection) {
             $list = $categories->all();
@@ -295,41 +362,107 @@ class ImportService
 
         $wcTax = $this->categoryTaxonomy();
 
+        // Index by Nhanh id so parents can be resolved before children.
+        $items = [];
         foreach ($list as $cat) {
             if (!$cat instanceof \Puleeno\NhanhVn\Entities\Product\ProductCategory) {
                 continue;
             }
-            $scanned++;
-            $nhanhId = (string) $cat->getId();
+            $id = (string) $cat->getId();
             $name = (string) $cat->getName();
-            if ($name === '') {
+            if ($id === '' || $name === '') {
                 continue;
             }
+            $items[$id] = [
+                'name' => $name,
+                'parent' => (int) $cat->getParentId(),
+                'description' => (string) $cat->getContent(),
+            ];
+        }
 
-            $termId = $this->woo->upsertTerm($wcTax, $name, (string) $cat->getContent());
-            if ($termId <= 0) {
-                $failed++;
-                continue;
+        $scanned = count($list);
+        $updated = 0;
+        $failed = 0;
+        $map = [];
+
+        // Reuse mappings from previous runs so existing terms keep their parent.
+        foreach (array_keys($items) as $id) {
+            $existing = $this->termMaps->findByNhanh('category', $id, $wcTax);
+            if ($existing && (int) ($existing['wc_term_id'] ?? 0) > 0) {
+                $map[$id] = (int) $existing['wc_term_id'];
+            }
+        }
+
+        $remaining = $items;
+        while ($remaining) {
+            $progress = false;
+
+            foreach ($remaining as $id => $item) {
+                $parentId = $item['parent'];
+                $parentReady = ($parentId <= 0) || !isset($items[$parentId]) || isset($map[$parentId]);
+                if (!$parentReady) {
+                    continue;
+                }
+
+                $parentTermId = ($parentId > 0 && isset($map[$parentId])) ? (int) $map[$parentId] : 0;
+
+                unset($remaining[$id]);
+                $progress = true;
+
+                $termId = $this->persistCategory($wcTax, $id, $item, $parentTermId);
+                if ($termId <= 0) {
+                    $failed++;
+                    continue;
+                }
+                $map[$id] = $termId;
+                $updated++;
             }
 
-            $this->termMaps->upsert([
-                'nhanh_term_type' => 'category',
-                'nhanh_term_id' => $nhanhId,
-                'nhanh_term_name' => $name,
-                'nhanh_parent_id' => (string) $cat->getParentId(),
-                'wc_taxonomy' => $wcTax,
-                'wc_term_id' => $termId,
-                'wc_term_name' => $name,
-                'product_count' => 0,
-                'status' => 'synced',
-                'auto_create_new' => 0,
-            ]);
-
-            $map[$nhanhId] = (int) $termId;
-            $updated++;
+            if (!$progress) {
+                // Orphan branch (parent absent from payload): import as root.
+                foreach ($remaining as $id => $item) {
+                    unset($remaining[$id]);
+                    $termId = $this->persistCategory($wcTax, $id, $item, 0);
+                    if ($termId <= 0) {
+                        $failed++;
+                        continue;
+                    }
+                    $map[$id] = $termId;
+                    $updated++;
+                }
+                break;
+            }
         }
 
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'map' => $map];
+    }
+
+    /**
+     * Create/update one category term and record its mapping.
+     *
+     * @param array{name:string,parent:int,description:string} $item
+     */
+    private function persistCategory(string $wcTax, string $nhanTermId, array $item, int $parentTermId): int
+    {
+        $termId = $this->woo->upsertTerm($wcTax, $item['name'], $item['description'], $parentTermId);
+        if ($termId <= 0) {
+            return 0;
+        }
+
+        $this->termMaps->upsert([
+            'nhanh_term_type' => 'category',
+            'nhan_term_id' => $nhanTermId,
+            'nhan_term_name' => $item['name'],
+            'nhan_parent_id' => (string) $item['parent'],
+            'wc_taxonomy' => $wcTax,
+            'wc_term_id' => $termId,
+            'wc_term_name' => $item['name'],
+            'product_count' => 0,
+            'status' => 'synced',
+            'auto_create_new' => 0,
+        ]);
+
+        return $termId;
     }
 
     /**

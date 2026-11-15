@@ -310,11 +310,17 @@ if (!class_exists('WP_Term')) {
         public $term_id;
         public $name;
         public $taxonomy;
-        public function __construct($id, $name, $taxonomy)
+        public $parent = 0;
+        public $slug = '';
+        public $description = '';
+        public function __construct($id, $name, $taxonomy, $parent = 0, $slug = '', $description = '')
         {
             $this->term_id = $id;
             $this->name = $name;
             $this->taxonomy = $taxonomy;
+            $this->parent = $parent;
+            $this->slug = $slug;
+            $this->description = $description;
         }
     }
 }
@@ -337,8 +343,40 @@ if (!function_exists('get_term_by')) {
 if (!function_exists('wp_insert_term')) {
     function wp_insert_term($term, $taxonomy, $args = []) {
         $id = $GLOBALS['__next_term_id']++;
-        $GLOBALS['__wp_terms'][$id] = new WP_Term($id, $term, $taxonomy);
+        $GLOBALS['__wp_terms'][$id] = new WP_Term(
+            $id,
+            $term,
+            $taxonomy,
+            (int) ($args['parent'] ?? 0),
+            (string) ($args['slug'] ?? ''),
+            (string) ($args['description'] ?? '')
+        );
         return ['term_id' => $id, 'term_taxonomy_id' => $id];
+    }
+}
+if (!function_exists('wp_update_term')) {
+    function wp_update_term($term_id, $taxonomy, $args = []) {
+        if (isset($GLOBALS['__wp_terms'][$term_id])) {
+            if (array_key_exists('name', $args)) {
+                $GLOBALS['__wp_terms'][$term_id]->name = $args['name'];
+            }
+            if (array_key_exists('parent', $args)) {
+                $GLOBALS['__wp_terms'][$term_id]->parent = (int) $args['parent'];
+            }
+            if (array_key_exists('description', $args)) {
+                $GLOBALS['__wp_terms'][$term_id]->description = (string) $args['description'];
+            }
+            if (array_key_exists('slug', $args)) {
+                $GLOBALS['__wp_terms'][$term_id]->slug = (string) $args['slug'];
+            }
+        }
+        return ['term_id' => $term_id, 'term_taxonomy_id' => $term_id];
+    }
+}
+if (!function_exists('is_taxonomy_hierarchical')) {
+    function is_taxonomy_hierarchical($taxonomy) {
+        $hierarchical = $GLOBALS['__hierarchical_taxonomies'] ?? ['product_cat'];
+        return in_array($taxonomy, $hierarchical, true);
     }
 }
 
@@ -415,35 +453,33 @@ if (!class_exists('wpdb')) {
         private function matches(array $row, array $conds): bool
         {
             foreach ($conds as $key => $cond) {
-                $exists = array_key_exists($key, $row);
-                $current = $exists ? $row[$key] : null;
+                if (!is_array($cond) || !isset($cond['op'])) {
+                    if (!array_key_exists($key, $row)) {
+                        return false;
+                    }
+                    if ((string) $row[$key] !== (string) $cond) {
+                        return false;
+                    }
+                    continue;
+                }
 
-                switch ($cond['op']) {
-                    case 'is_null':
-                        if ($current !== null) {
-                            return false;
-                        }
-                        break;
-                    case 'is_not_null':
-                        if ($current === null) {
-                            return false;
-                        }
-                        break;
-                    case 'in':
-                        if (!in_array((string) $current, array_map('strval', $cond['values']), true)) {
-                            return false;
-                        }
-                        break;
-                    case 'neq':
-                        if ((string) $current === (string) $cond['value']) {
-                            return false;
-                        }
-                        break;
-                    case 'eq':
-                    default:
-                        if (!$exists || (string) $current !== (string) $cond['value']) {
-                            return false;
-                        }
+                $current = array_key_exists($key, $row) ? $row[$key] : null;
+                $op = $cond['op'];
+
+                if ($op === 'eq' && (string) $current !== (string) ($cond['value'] ?? '')) {
+                    return false;
+                }
+                if ($op === 'neq' && (string) $current === (string) ($cond['value'] ?? '')) {
+                    return false;
+                }
+                if ($op === 'is_null' && $current !== null) {
+                    return false;
+                }
+                if ($op === 'is_not_null' && ($current === null || (string) $current === '')) {
+                    return false;
+                }
+                if ($op === 'in' && !in_array((string) $current, array_map('strval', $cond['values'] ?? []), true)) {
+                    return false;
                 }
             }
             return true;
@@ -451,33 +487,40 @@ if (!class_exists('wpdb')) {
 
         private function select(string $query): array
         {
-            if (!preg_match('/FROM\s+(\w+)(.*)$/is', $query, $m)) {
+            if (!preg_match('/FROM\s+([A-Za-z0-9_]+)(.*)$/is', $query, $m)) {
                 return [];
             }
+
             $table = $m[1];
             $rest = $m[2];
-            $rows = array_values($this->tables[$table] ?? []);
+            $rows = $this->tables[$table] ?? [];
 
+            $conds = [];
             if (preg_match('/WHERE\s+(.*?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/is', $rest, $wm)) {
                 $conds = $this->conditions($wm[1]);
-                $rows = array_values(array_filter($rows, function ($row) use ($conds) {
-                    return $this->matches($row, $conds);
-                }));
             }
 
-            if (preg_match('/ORDER\s+BY\s+(\w+)(\s+ASC|\s+DESC)?/i', $rest, $om)) {
+            $out = [];
+            foreach ($rows as $row) {
+                if (!$this->matches($row, $conds)) {
+                    continue;
+                }
+                $out[] = $row;
+            }
+
+            if (preg_match('/ORDER\s+BY\s+([A-Za-z0-9_]+)(\s+ASC|\s+DESC)?/i', $rest, $om)) {
                 $col = $om[1];
                 $dir = strtoupper(trim($om[2] ?? 'ASC')) === 'DESC' ? -1 : 1;
-                usort($rows, function ($a, $b) use ($col, $dir) {
+                usort($out, function ($a, $b) use ($col, $dir) {
                     return strcmp((string) ($a[$col] ?? ''), (string) ($b[$col] ?? '')) * $dir;
                 });
             }
 
             if (preg_match('/LIMIT\s+(\d+)/i', $rest, $lm)) {
-                $rows = array_slice($rows, 0, (int) $lm[1]);
+                $out = array_slice($out, 0, (int) $lm[1]);
             }
 
-            return $rows;
+            return $out;
         }
 
         public function insert($table, $data)
@@ -576,4 +619,5 @@ $GLOBALS['__wp_cron_events'] = $GLOBALS['__wp_cron_events'] ?? [];
 $GLOBALS['__wc_products'] = $GLOBALS['__wc_products'] ?? [];
 $GLOBALS['__next_wc_product_id'] = $GLOBALS['__next_wc_product_id'] ?? 1000;
 $GLOBALS['__wp_terms'] = $GLOBALS['__wp_terms'] ?? [];
+$GLOBALS['__hierarchical_taxonomies'] = $GLOBALS['__hierarchical_taxonomies'] ?? ['product_cat'];
 $GLOBALS['__next_term_id'] = $GLOBALS['__next_term_id'] ?? 100;

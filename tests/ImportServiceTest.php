@@ -139,6 +139,79 @@ class ImportServiceTest extends TestCase
         $this->assertNull($this->termMaps->findByNhanh('category', '101', 'product_brand'));
     }
 
+    public function testCategoriesAreImportedAsNestedTree(): void
+    {
+        $categories = [
+            new ProductCategory(['id' => 1, 'name' => 'Sách', 'parentId' => 0]),
+            new ProductCategory(['id' => 2, 'name' => 'Văn học', 'parentId' => 1]),
+            new ProductCategory(['id' => 3, 'name' => 'Kinh dị', 'parentId' => 1]),
+            new ProductCategory(['id' => 4, 'name' => 'Truyện ngắn', 'parentId' => 2]),
+        ];
+
+        $this->service($categories)->run(['trigger' => 'test']);
+
+        $root = $this->termMaps->findByNhanh('category', '1', 'product_cat');
+        $child = $this->termMaps->findByNhanh('category', '2', 'product_cat');
+        $grand = $this->termMaps->findByNhanh('category', '4', 'product_cat');
+
+        $this->assertNotNull($root);
+        $this->assertNotNull($child);
+        $this->assertNotNull($grand);
+
+        $rootTerm = get_term((int) $root['wc_term_id'], 'product_cat');
+        $childTerm = get_term((int) $child['wc_term_id'], 'product_cat');
+        $grandTerm = get_term((int) $grand['wc_term_id'], 'product_cat');
+
+        $this->assertSame(0, (int) $rootTerm->parent, 'Root category must have no parent');
+        $this->assertSame((int) $root['wc_term_id'], (int) $childTerm->parent, 'Child must point at root term');
+        $this->assertSame((int) $child['wc_term_id'], (int) $grandTerm->parent, 'Grandchild must point at child term');
+    }
+
+    public function testChildIsImportedEvenWhenListedBeforeParent(): void
+    {
+        $categories = [
+            new ProductCategory(['id' => 20, 'name' => 'Con', 'parentId' => 10]),
+            new ProductCategory(['id' => 10, 'name' => 'Cha', 'parentId' => 0]),
+        ];
+
+        $this->service($categories)->run(['trigger' => 'test']);
+
+        $parent = $this->termMaps->findByNhanh('category', '10', 'product_cat');
+        $child = $this->termMaps->findByNhanh('category', '20', 'product_cat');
+        $childTerm = get_term((int) $child['wc_term_id'], 'product_cat');
+
+        $this->assertSame((int) $parent['wc_term_id'], (int) $childTerm->parent);
+    }
+
+    public function testOrphanCategoryIsImportedAsRoot(): void
+    {
+        $categories = [
+            new ProductCategory(['id' => 30, 'name' => 'Mồ côi', 'parentId' => 999]),
+        ];
+
+        $result = $this->service($categories)->run(['trigger' => 'test']);
+
+        $map = $this->termMaps->findByNhanh('category', '30', 'product_cat');
+        $term = get_term((int) $map['wc_term_id'], 'product_cat');
+
+        $this->assertSame(1, $result['updated']);
+        $this->assertSame(0, (int) $term->parent, 'Orphan parent should fall back to root');
+    }
+
+    public function testBrandsStayFlatEvenWhenTaxonomyIsHierarchical(): void
+    {
+        $brands = [
+            new ProductBrand(['id' => 1, 'name' => 'Thương hiệu A']),
+        ];
+
+        $this->service([], $brands)->run(['trigger' => 'test']);
+
+        $map = $this->termMaps->findByNhanh('brand', '1', 'product_brand');
+        $term = get_term((int) $map['wc_term_id'], 'product_brand');
+
+        $this->assertSame(0, (int) $term->parent);
+    }
+
     public function testImportsBrandsIntoConfiguredTaxonomy(): void
     {
         $brands = [new ProductBrand(['id' => 201, 'name' => 'NOVA Basic'])];

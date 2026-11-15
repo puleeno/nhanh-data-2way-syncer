@@ -154,20 +154,44 @@ class WooBridge
         return is_wp_error($id) ? 0 : (int) $id;
     }
 
+    private function isHierarchical(string $taxonomy): bool
+    {
+        if (function_exists('is_taxonomy_hierarchical')) {
+            return (bool) is_taxonomy_hierarchical($taxonomy);
+        }
+        return in_array($taxonomy, ['product_cat'], true);
+    }
+
     /**
      * Create a term in a taxonomy (if missing) and return its id.
+     *
+     * @param int $parentId Parent term id (0 = root). Only meaningful for
+     *                      hierarchical taxonomies such as `product_cat`.
      */
-    public function upsertTerm(string $taxonomy, string $name, string $description = ''): int
+    public function upsertTerm(string $taxonomy, string $name, string $description = '', int $parentId = 0): int
     {
+        // Only hierarchical taxonomies (e.g. product_cat) support parents.
+        $parentId = ($parentId > 0 && $this->isHierarchical($taxonomy)) ? $parentId : 0;
+
         $term = get_term_by('name', $name, $taxonomy);
+
         if ($term instanceof \WP_Term) {
-            return (int) $term->term_id;
+            $termId = (int) $term->term_id;
+            if ($parentId > 0 && (int) $term->parent !== $parentId) {
+                wp_update_term($termId, $taxonomy, ['parent' => $parentId]);
+            }
+            return $termId;
         }
 
-        $result = wp_insert_term($name, $taxonomy, [
+        $args = [
             'description' => $description,
             'slug' => sanitize_title($name),
-        ]);
+        ];
+        if ($parentId > 0) {
+            $args['parent'] = $parentId;
+        }
+
+        $result = wp_insert_term($name, $taxonomy, $args);
 
         if (is_wp_error($result) || !is_array($result)) {
             return 0;
