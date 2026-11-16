@@ -6,6 +6,7 @@ use Puleeno\NhanhVn\Syncer\Admin\Assets;
 use Puleeno\NhanhVn\Syncer\Admin\Menu;
 use Puleeno\NhanhVn\Syncer\Admin\Pages\Renderer;
 use Puleeno\NhanhVn\Syncer\Admin\Settings;
+use Puleeno\NhanhVn\Syncer\Rest\WebhookController;
 use Puleeno\NhanhVn\Syncer\Contracts\SettingsRepositoryInterface;
 use Puleeno\NhanhVn\Syncer\Contracts\SyncStatusResolverInterface;
 use Puleeno\NhanhVn\Syncer\Database\JobRepository;
@@ -62,6 +63,9 @@ class Plugin
             // Still allow settings page registration in future if desired; for now limit admin UI.
             return;
         }
+
+        // Webhook REST endpoint
+        $this->webhookController()->register();
 
         if (is_admin()) {
             $this->menu()->register();
@@ -153,6 +157,13 @@ class Plugin
     {
         return $this->make('assets', function () {
             return new Assets();
+        });
+    }
+
+    public function webhookController(): WebhookController
+    {
+        return $this->make('webhook_controller', function (Plugin $plugin) {
+            return new WebhookController($plugin->settingsService());
         });
     }
 
