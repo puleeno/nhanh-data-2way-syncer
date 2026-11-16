@@ -198,6 +198,94 @@ class ImportServiceTest extends TestCase
         $this->assertSame(0, (int) $term->parent, 'Orphan parent should fall back to root');
     }
 
+    public function testRenamedCategoryKeepsLinkOnResync(): void
+    {
+        $categories = [
+            new ProductCategory(['id' => 1, 'name' => 'Sách', 'parentId' => 0]),
+            new ProductCategory(['id' => 2, 'name' => 'Văn học', 'parentId' => 1]),
+        ];
+
+        // First import.
+        $this->service($categories)->run(['trigger' => 'test']);
+        $before = $this->termMaps->findByNhanh('category', '2', 'product_cat');
+        $this->assertNotNull($before);
+        $termId = (int) $before['wc_term_id'];
+
+        // Shop manager renames the category in WooCommerce.
+        wp_update_term($termId, 'product_cat', ['name' => 'Văn học Việt Nam']);
+
+        // Second import must reuse the same term and keep the custom name.
+        $this->service($categories)->run(['trigger' => 'test']);
+        $after = $this->termMaps->findByNhanh('category', '2', 'product_cat');
+
+        $this->assertSame($termId, (int) $after['wc_term_id'], 'Mapping must still point at the same term');
+        $term = get_term($termId, 'product_cat');
+        $this->assertSame('Văn học Việt Nam', $term->name, 'Custom name must be preserved');
+        $this->assertSame('Văn học Việt Nam', $after['wc_term_name'], 'Mapping should reflect the Woo name');
+    }
+
+    public function testRenamedCategoryDoesNotCreateDuplicateTerm(): void
+    {
+        $categories = [new ProductCategory(['id' => 5, 'name' => 'Kỹ năng', 'parentId' => 0])];
+
+        $this->service($categories)->run(['trigger' => 'test']);
+        $first = $this->termMaps->findByNhanh('category', '5', 'product_cat');
+        wp_update_term((int) $first['wc_term_id'], 'product_cat', ['name' => 'Kỹ năng sống']);
+
+        $this->service($categories)->run(['trigger' => 'test']);
+
+        $all = array_filter($GLOBALS['__wp_terms'], function ($t) {
+            return $t->taxonomy === 'product_cat' && in_array($t->name, ['Kỹ năng', 'Kỹ năng sống'], true);
+        });
+        $this->assertCount(1, $all, 'No duplicate term should be created after a rename');
+    }
+
+    public function testSyncTermNamesOptInRenamesFromNhanh(): void
+    {
+        $categories = [new ProductCategory(['id' => 6, 'name' => 'Sách mới', 'parentId' => 0])];
+
+        $this->service($categories)->run(['trigger' => 'test']);
+        $map = $this->termMaps->findByNhanh('category', '6', 'product_cat');
+        wp_update_term((int) $map['wc_term_id'], 'product_cat', ['name' => 'Tên cũ']);
+
+        $this->service($categories, [], [], ['sync_term_names' => 1])->run(['trigger' => 'test']);
+
+        $term = get_term((int) $map['wc_term_id'], 'product_cat');
+        $this->assertSame('Sách mới', $term->name);
+    }
+
+    public function testRenamedBrandKeepsLinkOnResync(): void
+    {
+        $brands = [new ProductBrand(['id' => 1, 'name' => 'NOVA'])];
+
+        $this->service([], $brands)->run(['trigger' => 'test']);
+        $before = $this->termMaps->findByNhanh('brand', '1', 'product_brand');
+        $termId = (int) $before['wc_term_id'];
+        wp_update_term($termId, 'product_brand', ['name' => 'NOVA Basic']);
+
+        $this->service([], $brands)->run(['trigger' => 'test']);
+        $after = $this->termMaps->findByNhanh('brand', '1', 'product_brand');
+
+        $this->assertSame($termId, (int) $after['wc_term_id']);
+        $this->assertSame('NOVA Basic', get_term($termId, 'product_brand')->name);
+    }
+
+    public function testDeletedMappedTermIsRecreated(): void
+    {
+        $categories = [new ProductCategory(['id' => 7, 'name' => 'Tạm', 'parentId' => 0])];
+
+        $this->service($categories)->run(['trigger' => 'test']);
+        $map = $this->termMaps->findByNhanh('category', '7', 'product_cat');
+        $oldId = (int) $map['wc_term_id'];
+        wp_delete_term($oldId, 'product_cat');
+
+        $this->service($categories)->run(['trigger' => 'test']);
+
+        $fresh = $this->termMaps->findByNhanh('category', '7', 'product_cat');
+        $this->assertNotNull($fresh);
+        $this->assertNotSame($oldId, (int) $fresh['wc_term_id'], 'A deleted term should be recreated');
+    }
+
     public function testBrandsStayFlatEvenWhenTaxonomyIsHierarchical(): void
     {
         $brands = [
@@ -332,11 +420,25 @@ class ImportServiceTest extends TestCase
             new Product(['id' => 5005, 'code' => 'SKU-5005', 'name' => 'Inactive', 'price' => 1000, 'status' => 2]),
         ];
 
-        $this->service([], [], $products, ['import_post_status' => 'publish'])->run(['trigger' => 'test']);
+        // Images disabled -> nothing to wait for, so publish immediately.
+        $this->service([], [], $products, ['import_post_status' => 'publish', 'import_images' => 0])->run(['trigger' => 'test']);
 
         $map = $this->productMaps->findByCode('SKU-5005');
         $wc = \wc_get_product((int) $map['wc_product_id']);
         $this->assertSame('publish', $wc->get_data()['status']);
+    }
+
+    public function testPublishWaitsForImageWhenImagesEnabled(): void
+    {
+        $products = [
+            new Product(['id' => 5007, 'code' => 'SKU-5007', 'name' => 'Chưa có ảnh', 'price' => 1000, 'status' => 1]),
+        ];
+
+        $this->service([], [], $products, ['import_post_status' => 'publish', 'import_images' => 1])->run(['trigger' => 'test']);
+
+        $map = $this->productMaps->findByCode('SKU-5007');
+        $wc = \wc_get_product((int) $map['wc_product_id']);
+        $this->assertSame('draft', $wc->get_data()['status'], 'No image yet -> stay draft until images are ready');
     }
 
     public function testImageListPrefersAvatarAndPopulatesMap(): void

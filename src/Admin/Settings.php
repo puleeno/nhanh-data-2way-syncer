@@ -29,7 +29,7 @@ class Settings
         }
         check_admin_referer('nhanh_syncer_save_settings');
 
-        $sanitized = $this->settingsService->sanitize($_POST);
+        $sanitized = $this->settingsService->sanitize($_POST, $this->settingsService->all());
         $this->settingsService->save($sanitized);
 
         // Notify other parts of the plugin (e.g. cron scheduler) that settings changed.

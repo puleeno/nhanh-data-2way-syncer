@@ -29,6 +29,8 @@ class Defaults
             'auto_stock_update' => 1,
             'auto_create_missing_web_product' => 0,
             'brand_taxonomy' => 'product_brand',
+            // Keep WooCommerce term names when true = false (default). Enable to rename from Nhanh.
+            'sync_term_names' => 0,
             // Post status applied to products created by the Nhanh -> Woo import.
             'import_post_status' => 'draft',
             // Import performance / scoping knobs.

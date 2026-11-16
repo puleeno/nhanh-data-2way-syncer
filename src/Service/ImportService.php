@@ -98,10 +98,7 @@ class ImportService
             if ($brandResult['failed'] > 0) { $failures[] = 'brands'; $failed += $brandResult['failed']; }
 
             $prodResult = $this->safeSection('products', function () use ($client, $categoryResult) {
-                $products = $client->products()->search([]);
-                if ($products instanceof \Illuminate\Support\Collection) $products = $products->all();
-                if (!is_array($products)) $products = [];
-                return $this->importProducts($products, isset($categoryResult['map']) ? $categoryResult['map'] : []);
+                return $this->importProductsPaged($client, isset($categoryResult['map']) ? $categoryResult['map'] : []);
             }, ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0, 'deferred' => 0]);
             $scanned += $prodResult['scanned'];
             $updated += $prodResult['updated'];
@@ -213,9 +210,19 @@ class ImportService
     /** @return array<string,mixed> */
     private function settings(): array
     {
-        if (is_array($this->settings)) return $this->settings;
-        if (class_exists('Puleeno\\NhanhVn\\Syncer\\Plugin')) return \Puleeno\NhanhVn\Syncer\Plugin::get_settings();
-        return [];
+        // Always merge over the defaults so injected/partial settings (tests,
+        // manual runs) still expose every key the sync pipeline reads.
+        $defaults = class_exists('Puleeno\\NhanhVn\\Syncer\\Config\\Defaults')
+            ? \Puleeno\NhanhVn\Syncer\Config\Defaults::settings()
+            : [];
+
+        if (is_array($this->settings)) {
+            return array_merge($defaults, $this->settings);
+        }
+        if (class_exists('Puleeno\\NhanhVn\\Syncer\\Plugin')) {
+            return array_merge($defaults, (array) \Puleeno\NhanhVn\Syncer\Plugin::get_settings());
+        }
+        return $defaults;
     }
 
     /** @return object|null */
@@ -274,35 +281,67 @@ class ImportService
                     elseif (isset($resolved[$parentNhanhId])) { $parentTermId = (int) $resolved[$parentNhanhId]; }
                     else { $next[] = $id; continue; }
                 }
-                $termId = $this->persistCategory($wcTax, $id, $item, $parentTermId);
+                $termId = $this->persistCategory($wcTax, $id, $item, $parentTermId, $map[$id] ?? null);
                 if ($termId > 0) { $resolved[$id] = $termId; $map[$id] = $termId; $updated++; } else { $failed++; }
             }
             $pending = $next;
         }
         foreach ($pending as $id) {
-            $termId = $this->persistCategory($wcTax, $id, $items[$id], 0);
+            $termId = $this->persistCategory($wcTax, $id, $items[$id], 0, $map[$id] ?? null);
             if ($termId > 0) { $resolved[$id] = $termId; $map[$id] = $termId; $updated++; } else { $failed++; }
         }
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'map' => $map];
     }
 
     /** @param array{name:string,parent:string,description:string} $item */
-    private function persistCategory(string $wcTax, string $nhanhTermId, array $item, int $parentTermId): int
-    {
-        $termId = $this->woo->upsertTerm($wcTax, $item['name'], $item['description'], $parentTermId);
-        if ($termId <= 0) return 0;
+    private function persistCategory(
+        string $wcTax,
+        string $nhanhTermId,
+        array $item,
+        int $parentTermId,
+        ?int $existingTermId = null
+    ): int {
+        $termId = $this->woo->upsertTerm(
+            $wcTax,
+            $item['name'],
+            $item['description'],
+            $parentTermId,
+            $existingTermId,
+            !empty($this->settings()['sync_term_names'])
+        );
+        if ($termId <= 0) {
+            return 0;
+        }
+
+        // Record the term name as it exists in WooCommerce, so the admin screen
+        // reflects the shop manager's own wording after a rename.
+        $wcName = $item['name'];
+        if (function_exists('get_term')) {
+            $term = get_term($termId, $wcTax);
+            if ($term instanceof \WP_Term && !$this->isWpError($term)) {
+                $wcName = (string) $term->name;
+            }
+        }
+
         $this->termMaps->upsert([
             'nhanh_term_type' => 'category',
             'nhanh_term_id' => $nhanhTermId,
             'nhanh_term_name' => $item['name'],
-            'nhanh_parent_id' => ($item['parent'] !== '' && $item['parent'] !== '0') ? $item['parent'] : null,
+            'nhanh_parent_id' => (string) $item['parent'],
             'wc_taxonomy' => $wcTax,
             'wc_term_id' => $termId,
-            'wc_term_name' => $item['name'],
+            'wc_term_name' => $wcName,
+            'product_count' => 0,
             'status' => 'synced',
-            'last_synced_at' => current_time('mysql', 1),
+            'auto_create_new' => 0,
         ]);
+
         return $termId;
+    }
+
+    private function isWpError($thing): bool
+    {
+        return function_exists('is_wp_error') && is_wp_error($thing);
     }
 
     /** @param mixed $brands @return array{scanned:int,updated:int,failed:int} */
@@ -316,28 +355,125 @@ class ImportService
         foreach ($list as $brand) {
             $scanned++;
             if (!$brand instanceof \Puleeno\NhanhVn\Entities\Product\ProductBrand) continue;
-            $nhanhId = (string) $brand->getId();
+            $nhanhBrandId = (string) $brand->getId();
             $name = (string) $brand->getName();
-            if ($nhanhId === '' || $name === '') continue;
+            if ($nhanhBrandId === '' || $name === '') continue;
             $wcTax = (string) ($this->settings()['brand_taxonomy'] ?? 'product_brand');
             $wcTax = in_array($wcTax, ['product_cat', 'product_brand'], true) ? $wcTax : 'product_brand';
             $desc = method_exists($brand, 'getDescription') ? (string) $brand->getDescription() : '';
-            $termId = $this->woo->upsertTerm($wcTax, $name, $desc);
+            $existing = $this->termMaps->findByNhanh('brand', $nhanhBrandId, $wcTax);
+            $existingTermId = ($existing && (int) ($existing['wc_term_id'] ?? 0) > 0) ? (int) $existing['wc_term_id'] : null;
+            $termId = $this->woo->upsertTerm(
+                $wcTax,
+                $name,
+                $desc,
+                0,
+                $existingTermId,
+                !empty($this->settings()['sync_term_names'])
+            );
             if ($termId <= 0) { $failed++; continue; }
+
+            $wcName = $name;
+            if (function_exists('get_term')) {
+                $term = get_term($termId, $wcTax);
+                if ($term instanceof \WP_Term && !$this->isWpError($term)) {
+                    $wcName = (string) $term->name;
+                }
+            }
             $this->termMaps->upsert([
                 'nhanh_term_type' => 'brand',
-                'nhanh_term_id' => $nhanhId,
+                'nhanh_term_id' => $nhanhBrandId,
                 'nhanh_term_name' => $name,
                 'nhanh_parent_id' => method_exists($brand, 'getParentId') ? (string) ($brand->getParentId() ?: '') : '',
                 'wc_taxonomy' => $wcTax,
                 'wc_term_id' => $termId,
-                'wc_term_name' => $name,
+                'wc_term_name' => $wcName,
                 'status' => 'synced',
                 'last_synced_at' => current_time('mysql', 1),
             ]);
             $updated++;
         }
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed];
+    }
+
+    /**
+     * Walk every page of the Nhanh product list.
+     *
+     * Nhanh returns one page per request (default 100), so a single search()
+     * call would only ever cover the first page and the rest of the catalog
+     * would never be imported.
+     *
+     * @param object $client
+     * @return array<int,mixed>
+     */
+    /**
+     * Import products page by page, resuming from a stored cursor.
+     *
+     * Nhanh paginates with `paginator.next` (not `page`). The cursor is kept in
+     * an option so a run that hits its budget/time limit resumes where it
+     * stopped on the next cron tick instead of reprocessing page 1 forever.
+     *
+     * @param object $client
+     * @param array<string,int> $categoryMap
+     * @return array{scanned:int,updated:int,failed:int,skipped:int,deferred:int}
+     */
+    private function importProductsPaged($client, array $categoryMap): array
+    {
+        $http = (new NhanhClientFactory($this->settings()))->httpService();
+
+        $state = get_option('nhan_syncer_import_cursor');
+        $next = (is_array($state) && !empty($state['next'])) ? (string) $state['next'] : null;
+
+        $total = ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0, 'deferred' => 0];
+        $processed = 0;
+        $guard = 0;
+
+        while ($guard < 100) {
+            $guard++;
+
+            if ($http === null) {
+                // Fallback without a raw HTTP service: single page via the SDK.
+                $result = $client->products()->search(['paginator' => ['size' => 100]]);
+                $batch = $result instanceof \Illuminate\Support\Collection ? $result->all() : (is_array($result) ? $result : []);
+                $next = null;
+            } else {
+                $paginator = ['size' => 100];
+                if (!empty($next)) {
+                    $paginator['next'] = $next;
+                }
+                $response = $http->callApi('/v3.0/product/list', ['paginator' => $paginator]);
+                $batch = isset($response['data']) && is_array($response['data']) ? $response['data'] : [];
+                $next = $response['paginator']['next'] ?? null;
+            }
+
+            $pageResult = $this->importProducts($batch, $categoryMap);
+            $total['scanned'] += (int) $pageResult['scanned'];
+            $total['updated'] += (int) $pageResult['updated'];
+            $total['failed'] += (int) $pageResult['failed'];
+            $total['skipped'] += (int) ($pageResult['skipped'] ?? 0);
+            $processed += (int) $pageResult['scanned'];
+
+            $hitBudget = ($pageResult['deferred'] ?? 0) > 0
+                || $processed >= $this->maxProducts
+                || microtime(true) >= $this->deadline;
+
+            if (empty($next)) {
+                delete_option('nhan_syncer_import_cursor');
+                break;
+            }
+
+            update_option('nhan_syncer_import_cursor', [
+                'next' => (string) $next,
+                'updated_at' => time(),
+            ]);
+
+            if ($hitBudget) {
+                $total['deferred'] = 1;
+                break;
+            }
+        }
+
+        return $total;
     }
 
     /** @param array<int,mixed> $products @param array<string,int> $categoryMap @return array{scanned:int,updated:int,failed:int,skipped:int,deferred:int} */

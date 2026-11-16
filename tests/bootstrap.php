@@ -387,6 +387,12 @@ if (!function_exists('wp_update_term')) {
         return ['term_id' => $term_id, 'term_taxonomy_id' => $term_id];
     }
 }
+if (!function_exists('wp_delete_term')) {
+    function wp_delete_term($term_id, $taxonomy) {
+        unset($GLOBALS['__wp_terms'][$term_id]);
+        return true;
+    }
+}
 if (!function_exists('is_taxonomy_hierarchical')) {
     function is_taxonomy_hierarchical($taxonomy) {
         $hierarchical = $GLOBALS['__hierarchical_taxonomies'] ?? ['product_cat'];
@@ -525,7 +531,8 @@ if (!class_exists('wpdb')) {
 
             $out = [];
             foreach ($rows as $row) {
-                if (!$this->matches($row, $conds)) {
+                $ok = $this->matches($row, $conds);
+                if (!$ok) {
                     continue;
                 }
                 $out[] = $row;
@@ -576,6 +583,46 @@ if (!class_exists('wpdb')) {
             }
             $this->num_rows = $count;
             return $count;
+        }
+
+        public function delete($table, $where)
+        {
+            $count = 0;
+            foreach ($this->tables[$table] ?? [] as $key => $row) {
+                $match = true;
+                foreach ($where as $k => $v) {
+                    if ((string) ($row[$k] ?? null) !== (string) $v) {
+                        $match = false;
+                        break;
+                    }
+                }
+                if ($match) {
+                    unset($this->tables[$table][$key]);
+                    $count++;
+                }
+            }
+            $this->num_rows = $count;
+            return $count;
+        }
+
+        public function get_col($query)
+        {
+            $rows = $this->select($query);
+            $out = [];
+            foreach ($rows as $row) {
+                $values = array_values($row);
+                $out[] = $values[0] ?? null;
+            }
+            return $out;
+        }
+
+        public function query($query)
+        {
+            if (preg_match('/^\s*DELETE\s+FROM\s+([A-Za-z0-9_]+)/i', $query, $m)) {
+                $this->tables[$m[1]] = [];
+                return 0;
+            }
+            return $this->select($query);
         }
 
         public function get_var($query)

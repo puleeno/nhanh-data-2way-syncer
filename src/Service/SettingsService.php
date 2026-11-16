@@ -57,7 +57,7 @@ class SettingsService
      * @param array<string,mixed> $input Raw request input
      * @return array<string,mixed> Sanitized settings payload
      */
-    public function sanitize(array $input): array
+    public function sanitize(array $input, array $existing = []): array
     {
         $brand_tax = isset($input['brand_taxonomy']) ? (string) $input['brand_taxonomy'] : 'product_brand';
         $brand_tax = function_exists('sanitize_key') ? sanitize_key($brand_tax) : preg_replace('/[^a-z0-9_\-]/', '', strtolower($brand_tax));
@@ -65,15 +65,33 @@ class SettingsService
             $brand_tax = 'product_brand';
         }
 
-        $import_post_status = isset($input['import_post_status']) ? sanitize_key((string) $input['import_post_status']) : 'draft';
+        // Fields that live outside the current form must keep their stored value
+        // instead of being reset on every save.
+        $flag = function (string $key, int $default) use ($input, $existing): int {
+            if (!array_key_exists($key, $input)) {
+                return isset($existing[$key]) ? (int) $existing[$key] : $default;
+            }
+            return !empty($input[$key]) ? 1 : 0;
+        };
+
+        $sync_term_names = $flag('sync_term_names', 0);
+        $import_images = $flag('import_images', 1);
+
+        $import_post_status = isset($input['import_post_status']) && $input['import_post_status'] !== ''
+            ? sanitize_key((string) $input['import_post_status'])
+            : (isset($existing['import_post_status']) ? (string) $existing['import_post_status'] : 'draft');
         if (!in_array($import_post_status, ['publish', 'draft'], true)) {
             $import_post_status = 'draft';
         }
 
-        $max_per_run = isset($input['import_max_per_run']) ? (int) $input['import_max_per_run'] : 50;
+        $max_per_run = isset($input['import_max_per_run']) && $input['import_max_per_run'] !== ''
+            ? (int) $input['import_max_per_run']
+            : (isset($existing['import_max_per_run']) ? (int) $existing['import_max_per_run'] : 100);
         $import_max_per_run = max(1, min(500, $max_per_run));
 
-        $max_seconds = isset($input['import_max_seconds']) ? (int) $input['import_max_seconds'] : 120;
+        $max_seconds = isset($input['import_max_seconds']) && $input['import_max_seconds'] !== ''
+            ? (int) $input['import_max_seconds']
+            : (isset($existing['import_max_seconds']) ? (int) $existing['import_max_seconds'] : 600);
         $import_max_seconds = max(10, min(3600, $max_seconds));
 
         $text = function ($key) use ($input) {
@@ -121,8 +139,9 @@ class SettingsService
             'auto_stock_update' => $bool('auto_stock_update'),
             'auto_create_missing_web_product' => $bool('auto_create_missing_web_product'),
             'brand_taxonomy' => $brand_tax,
+            'sync_term_names' => $sync_term_names,
             'import_post_status' => $import_post_status,
-            'import_images' => !empty($input['import_images']) ? 1 : 0,
+            'import_images' => $import_images,
             'import_max_per_run' => $import_max_per_run,
             'import_max_seconds' => $import_max_seconds,
             'ui_mode' => $ui_mode,

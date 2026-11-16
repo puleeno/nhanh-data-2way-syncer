@@ -217,12 +217,36 @@ Kỳ vọng: `status=success`, `failed_count=0`.
 | `auto_sync_enabled` | `1` | Bật/tắt cron import |
 | `sync_interval_minutes` | `15` | Chu kỳ import (tối thiểu 5 phút) |
 | `import_post_status` | `draft` | `publish` hoặc `draft` cho sản phẩm tạo mới |
-| `import_images` | `1` | Tải ảnh về media library (chậm nhất) |
+| `import_images` | `1` | Tải ảnh; khi bật, sản phẩm chỉ **publish sau khi có ảnh** | Tải ảnh về media library (chậm nhất) |
 | `import_max_per_run` | `100` | Số sản phẩm tối đa mỗi nhịp |
 | `import_max_seconds` | `600` | Ngân sách thời gian mỗi nhịp |
 
 Mỗi nhịp có ngân sách riêng: hết giờ thì dừng gọn và nhịp sau chạy tiếp
 (upsert idempotent). Sản phẩm đã có ảnh sẽ **không tải lại ảnh**.
+
+### 6.1. Publish sau khi có ảnh
+
+Khi `import_images = 1` và `import_post_status = publish`:
+
+- Sản phẩm **chưa có ảnh** → tạo ở trạng thái `draft`
+- Khi ảnh đã tải xong (media library có `_thumbnail_id`) → lần đồng bộ sau tự chuyển `publish`
+
+Như vậy không bao giờ có sản phẩm đã đăng mà thiếu ảnh. Nếu tắt `import_images`,
+sản phẩm publish ngay vì không phải chờ ảnh.
+
+Kiểm tra nhanh:
+
+```bash
+wp db query "SELECT p.post_status,
+  SUM(pm.meta_value IS NOT NULL AND pm.meta_value<>'') AS with_thumb,
+  COUNT(*) AS total
+FROM nsxu_posts p
+LEFT JOIN nsxu_postmeta pm ON pm.post_id=p.ID AND pm.meta_key='_thumbnail_id'
+WHERE p.post_type='product'
+GROUP BY p.post_status"
+```
+
+Kỳ vọng: mọi dòng `publish` có `with_thumb = total`.
 
 ## 7. Màn hình quản trị (nguồn dữ liệu)
 

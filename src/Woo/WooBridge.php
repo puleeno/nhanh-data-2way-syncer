@@ -258,31 +258,92 @@ class WooBridge
         return (function_exists('is_wp_error') && is_wp_error($id)) ? 0 : (int) $id;
     }
 
+    /**
+     * Whether a product already has a featured image in the media library.
+     */
+    public function hasThumbnail(int $productId): bool
+    {
+        if ($productId <= 0) {
+            return false;
+        }
+        $product = function_exists('wc_get_product') ? wc_get_product($productId) : null;
+
+        return $product && (int) $product->get_image_id() > 0;
+    }
+
     private function isHierarchical(string $taxonomy): bool
     {
         if (function_exists('is_taxonomy_hierarchical')) return (bool) is_taxonomy_hierarchical($taxonomy);
         return in_array($taxonomy, ['product_cat'], true);
     }
 
-    public function upsertTerm(string $taxonomy, string $name, string $description = '', int $parentId = 0): int
-    {
+    public function upsertTerm(
+        string $taxonomy,
+        string $name,
+        string $description = '',
+        int $parentId = 0,
+        ?int $existingTermId = null,
+        bool $syncNames = false
+    ): int {
         $parentId = ($parentId > 0 && $this->isHierarchical($taxonomy)) ? $parentId : 0;
+
+        // 1) A mapped term wins: keep the user's own name/slug/description and
+        //    only repair the hierarchy. This is what keeps the link alive after
+        //    the shop manager renames a category in WooCommerce.
+        if ($existingTermId !== null && $existingTermId > 0 && function_exists('get_term')) {
+            $term = get_term($existingTermId, $taxonomy);
+            if ($term instanceof \WP_Term && !is_wp_error($term)) {
+                $args = [];
+                if ($parentId > 0 && (int) $term->parent !== $parentId) {
+                    $args['parent'] = $parentId;
+                }
+                if ($syncNames) {
+                    if (sanitize_text_field($term->name) !== sanitize_text_field($name)) {
+                        $args['name'] = $name;
+                    }
+                    if ($description !== '' && (string) $term->description !== $description) {
+                        $args['description'] = $description;
+                    }
+                }
+                if ($args && function_exists('wp_update_term')) {
+                    wp_update_term($existingTermId, $taxonomy, $args);
+                }
+                return (int) $existingTermId;
+            }
+            // The mapped term was deleted in WooCommerce: fall through and recreate.
+        }
+
+        // 2) No mapping yet: look the term up by name (legacy / first sync).
         $term = function_exists('get_term_by') ? get_term_by('name', $name, $taxonomy) : false;
         if ($term instanceof \WP_Term) {
             $termId = (int) $term->term_id;
             $args = [];
-            if ($parentId > 0 && (int) $term->parent !== $parentId) $args['parent'] = $parentId;
-            if ($description !== '') $args['description'] = $description;
-            if ($args && function_exists('wp_update_term')) wp_update_term($termId, $taxonomy, $args);
+            if ($parentId > 0 && (int) $term->parent !== $parentId) {
+                $args['parent'] = $parentId;
+            }
+            if ($syncNames && $description !== '' && (string) $term->description !== $description) {
+                $args['description'] = $description;
+            }
+            if ($args && function_exists('wp_update_term')) {
+                wp_update_term($termId, $taxonomy, $args);
+            }
             return $termId;
         }
+
+        // 3) Create it.
         $args = [
             'description' => $description,
-            'slug' => function_exists('sanitize_title') ? sanitize_title($name) : strtolower(preg_replace('/[^a-z0-9]+/i', '-', $name)),
+            'slug' => function_exists('sanitize_title')
+                ? sanitize_title($name)
+                : strtolower(preg_replace('/[^a-z0-9]+/i', '-', $name)),
         ];
-        if ($parentId > 0) $args['parent'] = $parentId;
+        if ($parentId > 0) {
+            $args['parent'] = $parentId;
+        }
         $result = function_exists('wp_insert_term') ? wp_insert_term($name, $taxonomy, $args) : null;
-        if ((function_exists('is_wp_error') && is_wp_error($result)) || !is_array($result)) return 0;
+        if ((function_exists('is_wp_error') && is_wp_error($result)) || !is_array($result)) {
+            return 0;
+        }
         return (int) ($result['term_id'] ?? 0);
     }
 }

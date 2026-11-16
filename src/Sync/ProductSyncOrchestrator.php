@@ -104,6 +104,24 @@ class ProductSyncOrchestrator
         return $this->syncSimple($p, $categoryMap, $importImages);
     }
 
+    /**
+     * Whether the product already has (or will have) an image.
+     *
+     * Images disabled => no wait. Image already attached => ready. Otherwise the
+     * product stays draft until a later run finishes the download.
+     */
+    private function hasUsableImage(int $wcProductId, bool $importImages): bool
+    {
+        if (!$importImages) {
+            return true;
+        }
+        if ($wcProductId > 0 && $this->woo->hasThumbnail($wcProductId)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private function syncSimple(NhanhProduct $p, array $categoryMap, bool $importImages): int
     {
         $nhanhId = $p->identity->id;
@@ -118,6 +136,11 @@ class ProductSyncOrchestrator
         if ($existing && !empty($existing['wc_product_id'])) {
             $wcData['wc_product_id'] = (int) $existing['wc_product_id'];
         }
+
+        // Publish only once the product actually has an image (when images are enabled).
+        $imagesReady = $this->hasUsableImage($existing ? (int) ($existing['wc_product_id'] ?? 0) : 0, $importImages);
+        $wcData['status'] = $this->statusPolicy->resolve($p, $this->settings, $imagesReady);
+
         $productId = $this->woo->upsertProduct($wcData);
         if ($productId <= 0) return 0;
 
@@ -149,6 +172,9 @@ class ProductSyncOrchestrator
         if ($existing && !empty($existing['wc_product_id'])) {
             $wcData['wc_product_id'] = (int) $existing['wc_product_id'];
         }
+
+        $imagesReady = $this->hasUsableImage($existing ? (int) ($existing['wc_product_id'] ?? 0) : 0, $importImages);
+        $wcData['status'] = $this->statusPolicy->resolve($p, $this->settings, $imagesReady);
 
         $productId = $this->woo->upsertProduct($wcData);
         if ($productId <= 0) return 0;

@@ -57,6 +57,54 @@ class NhanhClientFactory
     }
 
     /**
+     * Build a v3 HttpService for callers that need the raw response envelope
+     * (e.g. cursor pagination via `paginator.next`).
+     *
+     * @return \Puleeno\NhanhVn\Services\HttpService|null
+     */
+    public function httpService()
+    {
+        $config = $this->config();
+        if ($config === null || !class_exists(\Puleeno\NhanhVn\Services\HttpService::class)) {
+            return null;
+        }
+        $loggerClass = 'Puleeno\\NhanhVn\\Services\\Logger\\NullLogger';
+        if (!class_exists($loggerClass)) {
+            return null;
+        }
+
+        $logger = new $loggerClass();
+
+        return new \Puleeno\NhanhVn\Services\HttpService($config, $logger);
+    }
+
+    /**
+     * @return \Puleeno\NhanhVn\Config\ClientConfig|null
+     */
+    public function config()
+    {
+        $appId = isset($this->settings['app_id']) ? trim((string) $this->settings['app_id']) : '';
+        $businessId = isset($this->settings['business_id']) ? trim((string) $this->settings['business_id']) : '';
+        $accessToken = isset($this->settings['access_token']) ? trim((string) $this->settings['access_token']) : '';
+
+        if ($appId === '' || $businessId === '' || $accessToken === '' || !class_exists(ClientConfig::class)) {
+            return null;
+        }
+
+        try {
+            return new ClientConfig([
+                'appId' => $appId,
+                'businessId' => $businessId,
+                'accessToken' => $accessToken,
+                'apiVersion' => '3.0',
+                'oauthService' => 'pos',
+            ]);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Build via the fluent builder (kept as a fallback path).
      */
     public function makeViaBuilder(): ?NhanhVnClient

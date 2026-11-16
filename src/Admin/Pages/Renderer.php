@@ -790,6 +790,16 @@ class Renderer
         $this->field_text('logs_per_page_advanced', 'Log/trang (Advanced)', (string)($settings['logs_per_page_advanced'] ?? 100), 'number');
         echo '</div><p class="description">Khuyến nghị Advanced cho hệ thống hàng triệu products/variations/orders: giữ per-page 100–200, luôn lọc trước, dùng truy vấn phân trang (LIMIT/OFFSET hoặc keyset) trên bảng <code>nhanh_sync_product_map</code>, <code>nhanh_sync_term_map</code>, <code>nhanh_sync_order_map</code>, <code>nhanh_sync_logs</code>.</p></section>';
 
+        echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-download"></span> Tùy Chọn Import (Nhanh → WooCommerce)</h3><span class="muted">Ảnh · trạng thái · ngân sách mỗi nhịp</span></div><div class="nhanh-form-grid">';
+        $this->field_text('import_max_per_run', 'Số sản phẩm tối đa mỗi nhịp', (string)($settings['import_max_per_run'] ?? 100), 'number');
+        $this->field_text('import_max_seconds', 'Ngân sách thời gian mỗi nhịp (giây)', (string)($settings['import_max_seconds'] ?? 600), 'number');
+        $importPostStatus = isset($settings['import_post_status']) ? (string) $settings['import_post_status'] : 'draft';
+        echo '<div class="nhanh-field"><label for="nhanh_import_post_status">Trạng thái sản phẩm tạo mới</label><select id="nhanh_import_post_status" name="import_post_status"><option value="draft"' . selected($importPostStatus, 'draft', false) . '>Draft (nháp — an toàn khi import lần đầu)</option><option value="publish"' . selected($importPostStatus, 'publish', false) . '>Publish (đăng ngay)</option></select><p class="description">Áp dụng cho sản phẩm mới. Sản phẩm đã có sẽ giữ nguyên trạng thái.</p></div>';
+        echo '</div><div class="nhanh-checks">';
+        $this->field_check('import_images', 'Tải ảnh sản phẩm về Media Library', !empty($settings['import_images']));
+        $this->field_check('sync_term_names', 'Đồng bộ tên danh mục/thương hiệu từ Nhanh (tắt = giữ tên bạn đã tùy chỉnh)', !empty($settings['sync_term_names']));
+        echo '</div><p class="description">Khi <strong>Tắt</strong> “Đồng bộ tên từ Nhanh”, plugin chỉ cập nhật cấu trúc cha/con và ánh xạ — tên, slug, mô tả bạn tự đặt trong WooCommerce được giữ nguyên, không bị mất liên kết.</p></section>';
+
         echo '<section class="nhanh-card"><div class="nhanh-card-head"><h3><span class="dashicons dashicons-database"></span> Kiến trúc DB & Tham chiếu WooCommerce</h3><span class="muted">dbDelta · schema v' . esc_html(defined('NHANH_SYNCER_DB_VERSION') ? NHANH_SYNCER_DB_VERSION : 'n/a') . '</span></div>';
         echo '<div class="nhanh-table-wrap"><table class="widefat striped nhanh-table"><thead><tr><th>Bảng (prefix)</th><th>Mục đích</th><th>Tham chiếu WooCommerce</th></tr></thead><tbody>';
         $rows = [
