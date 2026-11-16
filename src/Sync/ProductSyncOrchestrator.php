@@ -8,6 +8,7 @@ use Puleeno\NhanhVn\Syncer\Database\TermMapRepository;
 use Puleeno\NhanhVn\Syncer\Database\WarehouseStockRepository;
 use Puleeno\NhanhVn\Syncer\Domain\Product\NhanhProduct;
 use Puleeno\NhanhVn\Syncer\Nhanh\Normalizer\ProductNormalizer;
+use Puleeno\NhanhVn\Syncer\Sync\Mapper\VariationMapper;
 use Puleeno\NhanhVn\Syncer\Sync\Policy\PostStatusPolicy;
 use Puleeno\NhanhVn\Syncer\Sync\Policy\PricePolicy;
 use Puleeno\NhanhVn\Syncer\Woo\WooBridge;
@@ -30,6 +31,8 @@ class ProductSyncOrchestrator
     private $pricePolicy;
     /** @var PostStatusPolicy */
     private $statusPolicy;
+    /** @var VariationMapper */
+    private $variationMapper;
     /** @var array<string,mixed> */
     private $settings;
 
@@ -50,6 +53,7 @@ class ProductSyncOrchestrator
         $this->normalizer = new ProductNormalizer();
         $this->pricePolicy = new PricePolicy();
         $this->statusPolicy = new PostStatusPolicy();
+        $this->variationMapper = new VariationMapper($this->pricePolicy, $this->statusPolicy);
     }
 
     /**
@@ -69,7 +73,7 @@ class ProductSyncOrchestrator
             $scanned++;
 
             try {
-                $p = $this->normalizer->normalize($src);
+                $p = ($src instanceof NhanhProduct) ? $src : $this->normalizer->normalize($src);
                 $ok = $this->syncOne($p, $categoryMap, $importImages);
                 if ($ok > 0) $updated++; else $skipped++;
             } catch (\Throwable $e) {
@@ -80,7 +84,27 @@ class ProductSyncOrchestrator
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'skipped' => $skipped, 'deferred' => $deferred];
     }
 
+    /** @return array{map:array<string,int>} */
+    public function buildCategoryMap(): array
+    {
+        $map = [];
+        foreach ($this->termMaps->all('product_cat') as $row) {
+            if (($row['nhanh_term_type'] ?? '') === 'category' && !empty($row['nhanh_term_id']) && !empty($row['wc_term_id'])) {
+                $map[(string) $row['nhanh_term_id']] = (int) $row['wc_term_id'];
+            }
+        }
+        return ['map' => $map];
+    }
+
     private function syncOne(NhanhProduct $p, array $categoryMap, bool $importImages): int
+    {
+        if ($this->variationMapper->isVariable($p)) {
+            return $this->syncVariable($p, $categoryMap, $importImages);
+        }
+        return $this->syncSimple($p, $categoryMap, $importImages);
+    }
+
+    private function syncSimple(NhanhProduct $p, array $categoryMap, bool $importImages): int
     {
         $nhanhId = $p->identity->id;
         $code = $p->identity->code;
@@ -88,27 +112,92 @@ class ProductSyncOrchestrator
         $sku = $code !== '' ? $code : 'NHANH-' . $nhanhId;
         $key = $code !== '' ? $code : $sku;
 
-        $existing = null;
-        if ($code !== '') $existing = $this->productMaps->findByCode($code);
-        if (!$existing && $nhanhId !== '') $existing = $this->productMaps->findByNhanhId($nhanhId);
-        if (!$existing && $sku !== '') $existing = $this->productMaps->findByCode($sku);
-
+        $existing = $this->findExistingMap($p, $sku);
         $wcData = $this->mapToWoo($p, $sku, $categoryMap, $importImages);
+        $wcData['type'] = 'simple';
         if ($existing && !empty($existing['wc_product_id'])) {
             $wcData['wc_product_id'] = (int) $existing['wc_product_id'];
         }
         $productId = $this->woo->upsertProduct($wcData);
         if ($productId <= 0) return 0;
 
-        $mapPayload = $this->buildMapPayload($p, $sku, $productId);
+        $mapPayload = $this->buildMapPayload($p, $key, $sku, $productId, 0);
         $mapId = $this->productMaps->upsert($mapPayload);
         if ($mapId <= 0) return 0;
 
-        // relations
         $this->warehouseStocks->syncForProductMap($mapId, $p->inventory->depots);
         $this->syncProductTerms($mapId, $p, $categoryMap);
-
         return $mapId;
+    }
+
+    /**
+     * Composite: parent variable + child variations/attributes/units.
+     */
+    private function syncVariable(NhanhProduct $p, array $categoryMap, bool $importImages): int
+    {
+        $nhanhId = $p->identity->id;
+        $code = $p->identity->code;
+        if ($nhanhId === '' && $code === '') return 0;
+        $sku = $code !== '' ? $code : 'NHANH-' . $nhanhId;
+        $key = $code !== '' ? $code : $sku;
+
+        $existing = $this->findExistingMap($p, $sku);
+        $wcData = $this->mapToWoo($p, $sku, $categoryMap, $importImages);
+        $wcData['type'] = 'variable';
+        $wcData['attributes'] = $this->variationMapper->buildParentAttributes($p);
+        $wcData['manage_stock'] = false; // variations own stock
+        if ($existing && !empty($existing['wc_product_id'])) {
+            $wcData['wc_product_id'] = (int) $existing['wc_product_id'];
+        }
+
+        $productId = $this->woo->upsertProduct($wcData);
+        if ($productId <= 0) return 0;
+
+        // sync variations
+        $variations = $this->variationMapper->buildVariations($p, $this->settings);
+        $syncedVarIds = [];
+        foreach ($variations as $v) {
+            $vSku = isset($v['sku']) ? (string) $v['sku'] : '';
+            $vCode = isset($v['nhanh_code']) ? (string) $v['nhanh_code'] : $vSku;
+            $vId = isset($v['nhanh_id']) ? (string) $v['nhanh_id'] : '';
+            $vExisting = $this->findExistingVariationMap($vId, $vCode, $vSku);
+            $variationId = $this->woo->upsertVariation($productId, $v, $vExisting ? (int) ($vExisting['wc_variation_id'] ?? 0) : 0);
+            if ($variationId <= 0) continue;
+            $syncedVarIds[] = $variationId;
+
+            $vPayload = $this->buildVariationMapPayload($v, $vCode !== '' ? $vCode : ($vSku !== '' ? $vSku : 'NHANH-VAR-' . $vId), $productId, $variationId);
+            $vMapId = $this->productMaps->upsert($vPayload);
+            if ($vMapId > 0 && isset($v['depots']) && is_array($v['depots'])) {
+                $this->warehouseStocks->syncForProductMap($vMapId, $v['depots']);
+            }
+        }
+        // detach stale variations
+        $this->woo->syncVariations($productId, $syncedVarIds);
+
+        $mapPayload = $this->buildMapPayload($p, $key, $sku, $productId, 0);
+        $mapId = $this->productMaps->upsert($mapPayload);
+        if ($mapId <= 0) return 0;
+        $this->warehouseStocks->syncForProductMap($mapId, $p->inventory->depots);
+        $this->syncProductTerms($mapId, $p, $categoryMap);
+        return $mapId;
+    }
+
+    private function findExistingMap(NhanhProduct $p, string $sku): ?array
+    {
+        $existing = null;
+        if ($p->identity->code !== '') $existing = $this->productMaps->findByCode($p->identity->code);
+        if (!$existing && $p->identity->id !== '') $existing = $this->productMaps->findByNhanhId($p->identity->id);
+        if (!$existing && $sku !== '') $existing = $this->productMaps->findByCode($sku);
+        return $existing;
+    }
+
+    private function findExistingVariationMap(string $id, string $code, string $sku): ?array
+    {
+        $existing = null;
+        if ($code !== '') $existing = $this->productMaps->findByCode($code);
+        if (!$existing && $id !== '') $existing = $this->productMaps->findByNhanhId($id);
+        if (!$existing && $sku !== '') $existing = $this->productMaps->findByCode($sku);
+        return $existing;
     }
 
     /** @param array<string,int> $categoryMap */
@@ -121,9 +210,11 @@ class ProductSyncOrchestrator
         }
 
         $images = $importImages ? $p->images->all() : [];
+        $desc = $p->content->content !== '' ? $p->content->content : $p->content->description;
 
         $meta = [
             '_nhanh_product_id' => $p->identity->id,
+            '_nhanh_parent_id' => $p->identity->parentId,
             '_nhanh_barcode' => $p->identity->barcode,
             '_nhanh_type' => $p->identity->type,
             '_nhanh_status' => is_scalar($p->identity->status) ? (string) $p->identity->status : wp_json_encode($p->identity->status),
@@ -138,10 +229,7 @@ class ProductSyncOrchestrator
         ];
         if ($p->content->otherName !== '') $meta['_nhanh_other_name'] = $p->content->otherName;
 
-        $desc = $p->content->content !== '' ? $p->content->content : $p->content->description;
-
         $taxonomyTerms = [];
-        // brand term assignment
         if ($p->brand && $p->brand->id !== '') {
             $brandTax = isset($this->settings['brand_taxonomy']) ? (string) $this->settings['brand_taxonomy'] : 'product_brand';
             $bmap = $this->termMaps->findByNhanh('brand', $p->brand->id, $brandTax);
@@ -202,12 +290,11 @@ class ProductSyncOrchestrator
         ];
     }
 
-    private function buildMapPayload(NhanhProduct $p, string $sku, int $productId): array
+    private function buildMapPayload(NhanhProduct $p, string $key, string $sku, int $productId, int $variationId): array
     {
         $firstImage = $p->images->avatar !== '' ? $p->images->avatar : ($p->images->all()[0] ?? null);
         $retail = $p->prices->retail !== null ? $p->prices->retail : 0.0;
         $old = $p->prices->old !== null ? $p->prices->old : $retail;
-        $key = $p->identity->code !== '' ? $p->identity->code : $sku;
         return [
             'nhanh_id' => $p->identity->id,
             'nhanh_code' => $key,
@@ -221,11 +308,37 @@ class ProductSyncOrchestrator
             'nhanh_original_price' => $old,
             'nhanh_stock_total' => $p->inventory->totalForSync(),
             'wc_product_id' => $productId,
-            'wc_variation_id' => 0,
+            'wc_variation_id' => $variationId,
             'wc_sku' => $sku,
             'sync_status' => 'synced',
             'image_url' => $firstImage,
             'tags_json' => wp_json_encode(array_map(function ($t) { return ['id' => $t->id, 'name' => $t->name]; }, $p->tags)),
+            'last_compared_at' => current_time('mysql', 1),
+            'last_synced_at' => current_time('mysql', 1),
+        ];
+    }
+
+    /** @param array<string,mixed> $v */
+    private function buildVariationMapPayload(array $v, string $key, int $parentId, int $variationId): array
+    {
+        $retail = isset($v['price']) && is_numeric($v['price']) ? (float) $v['price'] : 0.0;
+        return [
+            'nhanh_id' => (string) ($v['nhanh_id'] ?? ''),
+            'nhanh_code' => $key,
+            'nhanh_barcode' => (string) ($v['nhanh_barcode'] ?? ''),
+            'nhanh_name' => (string) ($v['name'] ?? ''),
+            'nhanh_category_id' => '',
+            'nhanh_category_name' => '',
+            'nhanh_brand_id' => '',
+            'nhanh_brand_name' => '',
+            'nhanh_price' => $retail,
+            'nhanh_original_price' => $retail,
+            'nhanh_stock_total' => (int) ($v['stock'] ?? 0),
+            'wc_product_id' => $parentId,
+            'wc_variation_id' => $variationId,
+            'wc_sku' => (string) ($v['sku'] ?? ''),
+            'sync_status' => 'synced',
+            'image_url' => (string) ($v['image'] ?? ''),
             'last_compared_at' => current_time('mysql', 1),
             'last_synced_at' => current_time('mysql', 1),
         ];
