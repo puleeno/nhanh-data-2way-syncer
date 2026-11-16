@@ -60,9 +60,9 @@ class TermMapRepository
 
         $rows = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM {$this->table()} WHERE nhanh_term_type = %s AND nhan_term_id = %s AND wc_taxonomy = %s",
-                $payload['nhan_term_type'] ?? '',
-                $payload['nhan_term_id'] ?? '',
+                "SELECT * FROM {$this->table()} WHERE nhanh_term_type = %s AND nhanh_term_id = %s AND wc_taxonomy = %s",
+                $payload['nhanh_term_type'] ?? '',
+                $payload['nhanh_term_id'] ?? '',
                 $payload['wc_taxonomy'] ?? ''
             ),
             ARRAY_A
