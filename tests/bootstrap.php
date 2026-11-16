@@ -260,16 +260,30 @@ if (!class_exists('WC_Product')) {
     {
         public $id = 0;
         private $data = [];
+        private $meta = [];
 
         public function set_name($name) { $this->data['name'] = $name; return $this; }
         public function set_sku($sku) { $this->data['sku'] = $sku; return $this; }
         public function set_price($price) { $this->data['price'] = $price; return $this; }
+        public function set_regular_price($price) { $this->data['regular_price'] = $price; $this->data['price'] = $price; return $this; }
+        public function set_sale_price($price) { $this->data['sale_price'] = $price; if ($price !== '' && $price !== null) $this->data['price'] = $price; return $this; }
+        public function set_manage_stock($v) { $this->data['manage_stock'] = (bool)$v; return $this; }
         public function set_stock_quantity($qty) { $this->data['stock_qty'] = $qty; return $this; }
         public function set_stock_status($status) { $this->data['stock_status'] = $status; return $this; }
         public function set_description($desc) { $this->data['description'] = $desc; return $this; }
+        public function set_short_description($desc) { $this->data['short_description'] = $desc; return $this; }
         public function set_status($status) { $this->data['status'] = $status; return $this; }
         public function set_category_ids($ids) { $this->data['category_ids'] = $ids; return $this; }
+        public function set_image_id($id) { $this->data['image_id'] = (int)$id; return $this; }
+        public function get_image_id() { return (int)($this->data['image_id'] ?? 0); }
+        public function set_gallery_image_ids($ids) { $this->data['gallery_image_ids'] = $ids; return $this; }
         public function set_images($images) { $this->data['images'] = $images; return $this; }
+        public function set_weight($v) { $this->data['weight'] = $v; return $this; }
+        public function set_length($v) { $this->data['length'] = $v; return $this; }
+        public function set_width($v) { $this->data['width'] = $v; return $this; }
+        public function set_height($v) { $this->data['height'] = $v; return $this; }
+        public function update_meta_data($k,$v) { $this->meta[$k] = $v; $this->data['meta'][$k] = $v; return $this; }
+        public function get_meta($k,$single=true) { return $this->meta[$k] ?? ''; }
 
         public function save()
         {
@@ -377,6 +391,15 @@ if (!function_exists('is_taxonomy_hierarchical')) {
     function is_taxonomy_hierarchical($taxonomy) {
         $hierarchical = $GLOBALS['__hierarchical_taxonomies'] ?? ['product_cat'];
         return in_array($taxonomy, $hierarchical, true);
+    }
+}
+
+
+if (!function_exists('wp_set_object_terms')) {
+    function wp_set_object_terms($object_id, $terms, $taxonomy, $append = false) {
+        if (!isset($GLOBALS['__wp_object_terms'][$taxonomy])) $GLOBALS['__wp_object_terms'][$taxonomy] = [];
+        $GLOBALS['__wp_object_terms'][$taxonomy][$object_id] = array_values(array_map('intval', (array)$terms));
+        return $GLOBALS['__wp_object_terms'][$taxonomy][$object_id];
     }
 }
 
