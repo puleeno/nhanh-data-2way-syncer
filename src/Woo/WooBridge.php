@@ -10,12 +10,25 @@ use WC_Product;
  */
 class WooBridge
 {
+    /** @var array<string,mixed>|null */
+    private $lastImageStats = null;
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function getLastImageStats(): ?array
+    {
+        return $this->lastImageStats;
+    }
+
     /**
      * @param array<string,mixed> $data
      * @return int Product id (0 on failure)
      */
     public function upsertProduct(array $data): int
     {
+        $this->lastImageStats = null;
+
         $sku = isset($data['sku']) ? (string) $data['sku'] : '';
         $existingId = 0;
         if (!empty($data['wc_product_id'])) {
@@ -212,39 +225,77 @@ class WooBridge
         if (!$product instanceof WC_Product) return;
         $hasImage = method_exists($product, 'get_image_id') ? ((int) $product->get_image_id() > 0) : false;
         if (!empty($data['images']) && is_array($data['images']) && ($forceImages || !$hasImage)) {
-            $this->applyImages($productId, $data['images']);
+            $this->lastImageStats = $this->applyImages($productId, $data['images']);
+        } else {
+            $provided = (!empty($data['images']) && is_array($data['images'])) ? count(array_values(array_filter(array_map('strval', $data['images'])))) : 0;
+            $this->lastImageStats = [
+                'provided' => $provided,
+                'imported' => 0,
+                'skipped' => ($provided > 0 && $hasImage && !$forceImages) ? $provided : 0,
+                'failed' => 0,
+                'items' => [],
+                'reason' => ($provided === 0) ? 'none_provided' : (($hasImage && !$forceImages) ? 'already_has_thumbnail' : 'not_attempted'),
+            ];
         }
     }
 
-    private function resolveAttachmentId(string $url, int $postId): int
+    private function resolveAttachmentId(string $url, int $postId): array
     {
         $url = function_exists('esc_url_raw') ? esc_url_raw($url) : $url;
-        if ($url === '' || !preg_match('#^https?://#i', $url)) return 0;
+        if ($url === '' || !preg_match('#^https?://#i', $url)) {
+            return ['id' => 0, 'status' => 'invalid_url', 'url' => $url];
+        }
         if (function_exists('attachment_url_to_postid')) {
             $existing = (int) attachment_url_to_postid($url);
-            if ($existing > 0) return $existing;
+            if ($existing > 0) {
+                return ['id' => $existing, 'status' => 'existing', 'url' => $url];
+            }
         }
-        return $this->sideloadImage($url, $postId);
+        $id = $this->sideloadImage($url, $postId);
+        if ($id > 0) {
+            return ['id' => $id, 'status' => 'imported', 'url' => $url];
+        }
+        return ['id' => 0, 'status' => 'failed', 'url' => $url];
     }
 
-    /** @param array<int,string> $urls */
-    private function applyImages(int $productId, array $urls): void
+    /**
+     * @param array<int,string> $urls
+     * @return array<string,mixed>
+     */
+    private function applyImages(int $productId, array $urls): array
     {
         $urls = array_values(array_filter(array_map('strval', $urls)));
-        if (!$urls) return;
+        $stats = [
+            'provided' => count($urls),
+            'imported' => 0,
+            'existing' => 0,
+            'failed' => 0,
+            'skipped' => 0,
+            'items' => [],
+        ];
+        if (!$urls) return $stats;
+
         $attachmentIds = [];
         foreach ($urls as $url) {
-            $id = $this->resolveAttachmentId($url, $productId);
-            if ($id > 0) $attachmentIds[] = $id;
+            $res = $this->resolveAttachmentId($url, $productId);
+            $stats['items'][] = $res;
+            if (($res['id'] ?? 0) > 0) {
+                $attachmentIds[] = (int) $res['id'];
+                if (($res['status'] ?? '') === 'existing') $stats['existing']++; else $stats['imported']++;
+            } else {
+                if (($res['status'] ?? '') === 'invalid_url') $stats['skipped']++; else $stats['failed']++;
+            }
         }
-        if (!$attachmentIds) return;
+        if (!$attachmentIds) return $stats;
+
         $product = wc_get_product($productId);
-        if (!$product instanceof WC_Product) return;
+        if (!$product instanceof WC_Product) return $stats;
         if (method_exists($product, 'set_image_id')) $product->set_image_id((int) array_shift($attachmentIds));
         if ($attachmentIds && method_exists($product, 'set_gallery_image_ids')) {
             $product->set_gallery_image_ids(array_map('intval', $attachmentIds));
         }
         $product->save();
+        return $stats;
     }
 
     private function sideloadImage(string $url, int $postId): int

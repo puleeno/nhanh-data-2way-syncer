@@ -184,11 +184,13 @@ class Data
      */
     private static function logs(): array
     {
-        $rows = (new LogRepository())->recent();
+        // Higher limit so detailed per-item import logs remain visible for debugging.
+        $rows = (new LogRepository())->recent(5000);
 
         $out = [];
         foreach ($rows as $row) {
             $out[] = [
+                'id' => isset($row['id']) ? (int) $row['id'] : 0,
                 'time' => self::when($row['event_time'] ?? ($row['created_at'] ?? null)),
                 'type' => (string) ($row['type'] ?? ''),
                 'ref' => (string) ($row['reference_code'] ?? ''),
@@ -196,6 +198,8 @@ class Data
                 'detail' => (string) ($row['detail'] ?? ''),
                 'status' => (string) ($row['status'] ?? ''),
                 'ms' => (int) ($row['duration_ms'] ?? 0),
+                'product_map_id' => isset($row['product_map_id']) ? (int) $row['product_map_id'] : null,
+                'wc_order_id' => isset($row['wc_order_id']) ? (int) $row['wc_order_id'] : null,
             ];
         }
 

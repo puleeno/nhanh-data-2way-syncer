@@ -35,6 +35,10 @@ class ImportService
     private $deadline = 0.0;
     /** @var int */
     private $maxProducts = 50;
+    /** @var int */
+    private $currentJobId = 0;
+    /** @var bool */
+    private $detailedLogging = false;
 
     public function __construct(
         JobRepository $jobs,
@@ -59,6 +63,7 @@ class ImportService
         if ($jobId <= 0) {
             return ['ok' => false, 'job_id' => 0, 'error' => 'cannot_create_job'];
         }
+        $this->currentJobId = $jobId;
         $this->jobs->start($jobId);
 
         $started = microtime(true);
@@ -73,6 +78,25 @@ class ImportService
         $maxSeconds = isset($this->settings()['import_max_seconds']) ? max(10, (int) $this->settings()['import_max_seconds']) : 600;
         $this->maxProducts = isset($this->settings()['import_max_per_run']) ? max(1, (int) $this->settings()['import_max_per_run']) : 100;
         $this->deadline = $started + $maxSeconds;
+        $this->detailedLogging = !empty($this->settings()['detailed_import_logging']);
+
+        $this->jobs->log(
+            $jobId,
+            'import_start',
+            'info',
+            'Bắt đầu đồng bộ Nhanh → WooCommerce',
+            sprintf(
+                'Trigger: %s | max_products=%d | max_seconds=%d | import_images=%s | detailed_logging=%s',
+                (string) ($context['trigger'] ?? 'cron'),
+                $this->maxProducts,
+                $maxSeconds,
+                !empty($this->settings()['import_images']) ? 'yes' : 'no',
+                $this->detailedLogging ? 'on' : 'off'
+            ),
+            null,
+            null,
+            ['source' => (string) ($context['trigger'] ?? 'cron')]
+        );
 
         try {
             $client = $this->client();
@@ -120,6 +144,7 @@ class ImportService
         } catch (\Throwable $e) {
             $status = 'failed';
             $errorDetail = $e->getMessage();
+            $this->jobs->log($jobId, 'import_error', 'error', 'Lỗi đồng bộ Nhanh → WooCommerce', $errorDetail);
         }
 
         $this->jobs->finish($jobId, $status, $scanned, $updated, $failed, [
@@ -143,6 +168,8 @@ class ImportService
             $this->buildLogDetail($scanned, $updated, $failed, $categoryResult, $brandResult, $prodResult, $errorDetail),
             $durationMs
         );
+
+        $this->currentJobId = 0;
 
         return [
             'ok' => $status === 'success',
@@ -195,6 +222,7 @@ class ImportService
             return is_array($result) ? $result : $fallback;
         } catch (\Throwable $e) {
             $this->lastSectionErrors[$name] = $e->getMessage();
+            $this->jobs->log($this->currentJobId, $name . '_sync', 'error', 'Lỗi section ' . $name, $e->getMessage());
             return $fallback;
         }
     }
@@ -251,10 +279,16 @@ class ImportService
         $rawList = is_array($categories) ? $categories : [];
         foreach ($rawList as $cat) {
             $scanned++;
-            if (!$cat instanceof \Puleeno\NhanhVn\Entities\Product\ProductCategory) continue;
+            if (!$cat instanceof \Puleeno\NhanhVn\Entities\Product\ProductCategory) {
+                $this->logDetail('category_sync', 'warning', 'Danh mục bỏ qua (entity không hợp lệ)', 'Index #' . $scanned . ' không phải ProductCategory', (string) $scanned);
+                continue;
+            }
             $id = (string) ($cat->getId() ?? '');
             $name = (string) $cat->getName();
-            if ($id === '' || $name === '') continue;
+            if ($id === '' || $name === '') {
+                $this->logDetail('category_sync', 'warning', 'Danh mục bỏ qua (thiếu id/tên)', 'id=' . $id . ' name=' . $name, $id !== '' ? $id : (string) $scanned);
+                continue;
+            }
             $items[$id] = [
                 'name' => $name,
                 'parent' => (string) ((int) ($cat->getParentId() ?? 0)),
@@ -290,6 +324,18 @@ class ImportService
             $termId = $this->persistCategory($wcTax, $id, $items[$id], 0, $map[$id] ?? null);
             if ($termId > 0) { $resolved[$id] = $termId; $map[$id] = $termId; $updated++; } else { $failed++; }
         }
+
+        $this->jobs->log(
+            $this->currentJobId,
+            'category_sync',
+            $failed > 0 ? 'partial' : 'success',
+            'Đồng bộ danh mục Nhanh → WooCommerce',
+            sprintf('Quét %d, cập nhật/ánh xạ %d, lỗi %d', $scanned, $updated, $failed),
+            null,
+            null,
+            ['payload_json' => function_exists('wp_json_encode') ? wp_json_encode(['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed]) : null]
+        );
+
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed, 'map' => $map];
     }
 
@@ -301,6 +347,9 @@ class ImportService
         int $parentTermId,
         ?int $existingTermId = null
     ): int {
+        $existedBefore = $this->termMaps->findByNhanh('category', $nhanhTermId, $wcTax);
+        $hadTerm = $existedBefore && !empty($existedBefore['wc_term_id']);
+
         $termId = $this->woo->upsertTerm(
             $wcTax,
             $item['name'],
@@ -310,6 +359,7 @@ class ImportService
             !empty($this->settings()['sync_term_names'])
         );
         if ($termId <= 0) {
+            $this->logDetail('category_sync', 'error', 'Danh mục lỗi: không tạo/cập nhật được term WC', sprintf('Nhanh[%s] %s (parent=%s)', $nhanhTermId, $item['name'], $item['parent']), $nhanhTermId);
             return 0;
         }
 
@@ -335,6 +385,14 @@ class ImportService
             'status' => 'synced',
             'auto_create_new' => 0,
         ]);
+
+        $this->logDetail(
+            'category_sync',
+            'success',
+            ($hadTerm ? 'Danh mục cập nhật' : 'Danh mục tạo/ánh xạ') . ': ' . $item['name'],
+            sprintf('Nhanh ID=%s → WC term_id=%d, taxonomy=%s, parent_nhanh=%s, parent_wc=%d', $nhanhTermId, $termId, $wcTax, $item['parent'], $parentTermId),
+            $nhanhTermId
+        );
 
         return $termId;
     }
@@ -371,7 +429,11 @@ class ImportService
                 $existingTermId,
                 !empty($this->settings()['sync_term_names'])
             );
-            if ($termId <= 0) { $failed++; continue; }
+            if ($termId <= 0) {
+                $failed++;
+                $this->logDetail('brand_sync', 'error', 'Thương hiệu lỗi: không tạo/cập nhật được term WC', sprintf('Nhanh[%s] %s', $nhanhBrandId, $name), $nhanhBrandId);
+                continue;
+            }
 
             $wcName = $name;
             if (function_exists('get_term')) {
@@ -392,7 +454,26 @@ class ImportService
                 'last_synced_at' => current_time('mysql', 1),
             ]);
             $updated++;
+            $this->logDetail(
+                'brand_sync',
+                'success',
+                ($existingTermId ? 'Thương hiệu cập nhật' : 'Thương hiệu tạo/ánh xạ') . ': ' . $name,
+                sprintf('Nhanh ID=%s → WC term_id=%d, taxonomy=%s', $nhanhBrandId, $termId, $wcTax),
+                $nhanhBrandId
+            );
         }
+
+        $this->jobs->log(
+            $this->currentJobId,
+            'brand_sync',
+            $failed > 0 ? 'partial' : 'success',
+            'Đồng bộ thương hiệu Nhanh → WooCommerce',
+            sprintf('Quét %d, cập nhật/ánh xạ %d, lỗi %d', $scanned, $updated, $failed),
+            null,
+            null,
+            ['payload_json' => function_exists('wp_json_encode') ? wp_json_encode(['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed]) : null]
+        );
+
         return ['scanned' => $scanned, 'updated' => $updated, 'failed' => $failed];
     }
 
@@ -427,9 +508,11 @@ class ImportService
         $total = ['scanned' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0, 'deferred' => 0];
         $processed = 0;
         $guard = 0;
+        $pageNo = 0;
 
         while ($guard < 100) {
             $guard++;
+            $pageNo++;
 
             if ($http === null) {
                 // Fallback without a raw HTTP service: single page via the SDK.
@@ -445,6 +528,17 @@ class ImportService
                 $batch = isset($response['data']) && is_array($response['data']) ? $response['data'] : [];
                 $next = $response['paginator']['next'] ?? null;
             }
+
+            $this->jobs->log(
+                $this->currentJobId,
+                'product_page',
+                'info',
+                'Tải trang sản phẩm #' . $pageNo,
+                sprintf('Nhận %d sản phẩm từ Nhanh (cursor_next=%s)', is_array($batch) ? count($batch) : 0, $next ? 'yes' : 'no'),
+                null,
+                null,
+                ['payload_json' => function_exists('wp_json_encode') ? wp_json_encode(['page' => $pageNo, 'count' => is_array($batch) ? count($batch) : 0, 'has_next' => !empty($next)]) : null]
+            );
 
             $pageResult = $this->importProducts($batch, $categoryMap);
             $total['scanned'] += (int) $pageResult['scanned'];
@@ -469,6 +563,7 @@ class ImportService
 
             if ($hitBudget) {
                 $total['deferred'] = 1;
+                $this->jobs->log($this->currentJobId, 'product_page', 'warning', 'Tạm dừng import (đạt giới hạn), sẽ tiếp tục lần sau', sprintf('Đã xử lý %d sản phẩm trong run này, còn lại sẽ tiếp tục từ cursor.', $processed));
                 break;
             }
         }
@@ -479,7 +574,24 @@ class ImportService
     /** @param array<int,mixed> $products @param array<string,int> $categoryMap @return array{scanned:int,updated:int,failed:int,skipped:int,deferred:int} */
     private function importProducts(array $products, array $categoryMap = []): array
     {
-        $orchestrator = new ProductSyncOrchestrator($this->productMaps, $this->termMaps, $this->woo, $this->settings());
+        $orchestrator = new ProductSyncOrchestrator(
+            $this->productMaps,
+            $this->termMaps,
+            $this->woo,
+            $this->settings(),
+            null,
+            null,
+            $this->currentJobId,
+            $this->detailedLogging ? $this->jobs : null
+        );
         return $orchestrator->syncProducts($products, $categoryMap, $this->maxProducts, $this->deadline);
+    }
+
+    private function logDetail(string $type, string $status, string $title, string $detail = '', ?string $ref = null): void
+    {
+        if (!$this->detailedLogging || $this->currentJobId <= 0) {
+            return;
+        }
+        $this->jobs->log($this->currentJobId, $type, $status, $title, $detail, null, $ref);
     }
 }

@@ -76,6 +76,7 @@ class SettingsService
 
         $sync_term_names = $flag('sync_term_names', 0);
         $import_images = $flag('import_images', 1);
+        $detailed_import_logging = $flag('detailed_import_logging', 1);
 
         $import_post_status = isset($input['import_post_status']) && $input['import_post_status'] !== ''
             ? sanitize_key((string) $input['import_post_status'])
@@ -144,6 +145,7 @@ class SettingsService
             'import_images' => $import_images,
             'import_max_per_run' => $import_max_per_run,
             'import_max_seconds' => $import_max_seconds,
+            'detailed_import_logging' => $detailed_import_logging,
             'ui_mode' => $ui_mode,
             'products_per_page_compact' => $clamp('products_per_page_compact', 20, 5, 100),
             'products_per_page_advanced' => $clamp('products_per_page_advanced', 100, 20, 500),

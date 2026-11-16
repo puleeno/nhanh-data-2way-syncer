@@ -37,6 +37,8 @@ class Defaults
             'import_images' => 1,
             'import_max_per_run' => 100,
             'import_max_seconds' => 600,
+            // Detailed per-item audit logging (categories/products/images/publish status)
+            'detailed_import_logging' => 1,
             // UI/performance modes for catalogs with many products/variations/orders.
             'ui_mode' => 'compact', // compact|advanced
             'products_per_page_compact' => 20,

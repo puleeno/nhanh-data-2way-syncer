@@ -109,22 +109,59 @@ class JobRepository
     }
 
     /**
-     * Append an audit log row for a job (best-effort; never throws).
+     * Append an audit log row (best-effort; never throws).
+     *
+     * @param array<string,mixed> $extra Optional: product_map_id,wc_order_id,nhanh_order_id,payload_json,response_json,dedupe_key,direction,source
      */
-    public function log(int $jobId, string $type, string $status, string $title, string $detail = '', ?int $durationMs = null, ?string $referenceCode = null): void
+    public function log(int $jobId, string $type, string $status, string $title, string $detail = '', ?int $durationMs = null, ?string $referenceCode = null, array $extra = []): void
     {
-        global $wpdb;
-        $wpdb->insert($this->logsTable(), [
+        $row = [
             'event_time' => current_time('mysql', 1),
-            'direction' => 'nhanh_to_wc',
+            'direction' => isset($extra['direction']) ? (string) $extra['direction'] : 'nhanh_to_wc',
             'type' => $type,
             'status' => $status,
             'reference_code' => $referenceCode,
             'title' => $title,
             'detail' => $detail,
             'duration_ms' => $durationMs,
-            'source' => 'cron',
+            'source' => isset($extra['source']) ? (string) $extra['source'] : 'cron',
             'created_at' => current_time('mysql', 1),
-        ]);
+        ];
+        foreach (['product_map_id', 'wc_order_id', 'nhanh_order_id', 'payload_json', 'response_json', 'dedupe_key'] as $k) {
+            if (array_key_exists($k, $extra) && $extra[$k] !== null && $extra[$k] !== '') {
+                $row[$k] = $extra[$k];
+            }
+        }
+        // Lightweight link to job in payload for traceability (table has no job_id column)
+        if ($jobId > 0) {
+            $meta = ['job_id' => $jobId];
+            if (!empty($row['payload_json'])) {
+                $decoded = json_decode((string) $row['payload_json'], true);
+                if (is_array($decoded)) {
+                    $meta = array_merge($meta, $decoded);
+                } else {
+                    $meta['payload'] = $row['payload_json'];
+                }
+            }
+            $row['payload_json'] = function_exists('wp_json_encode') ? wp_json_encode($meta) : json_encode($meta);
+        }
+
+        $this->insertLog($row);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    public function insertLog(array $row): bool
+    {
+        global $wpdb;
+        if (empty($row['event_time'])) {
+            $row['event_time'] = current_time('mysql', 1);
+        }
+        if (empty($row['created_at'])) {
+            $row['created_at'] = current_time('mysql', 1);
+        }
+        $ok = $wpdb->insert($this->logsTable(), $row);
+        return (bool) $ok;
     }
 }
